@@ -646,14 +646,31 @@ where
   -- * HOL theorems
   -- 
 
-  newtype Theorem = Theorem ([Term], Term)
+  data Provenance
+    = FromAxiom
+    | DerivedSafely
+    deriving (Eq, Show, Ord)
+
+  track :: Provenance -> Provenance -> Provenance
+  FromAxiom     `track` _              = FromAxiom
+  _             `track`  FromAxiom     = FromAxiom
+  DerivedSafely `track`  DerivedSafely = DerivedSafely
+
+  instance Pretty Provenance where
+    pretty FromAxiom     = "[!]"
+    pretty DerivedSafely = "[✔]"
+
+  data Theorem = Theorem Provenance ([Term], Term)
     deriving(Show, Eq, Ord)
 
   hypotheses :: Theorem -> [Term]
-  hypotheses (Theorem (hyps, concl)) = hyps
+  hypotheses (Theorem _ (hyps, concl)) = hyps
 
   conclusion :: Theorem -> Term
-  conclusion (Theorem (hyps, concl)) = concl
+  conclusion (Theorem _ (hyps, concl)) = concl
+
+  provenance :: Theorem -> Provenance
+  provenance (Theorem p _) = p
 
   union :: [Term] -> [Term] -> [Term]
   union = L.unionBy (==)
@@ -666,9 +683,19 @@ where
   --
 
   instance Pretty Theorem where
-    pretty (Theorem([], concl)) = "⊢ " ++ pretty concl
-    pretty (Theorem(hyps, concl)) =
-      L.intercalate ",\n" (map pretty hyps) ++ " ⊢ " ++ pretty concl
+    pretty (Theorem provenance ([], concl)) =
+      unwords [
+        "⊢"
+      , pretty concl
+      , pretty provenance
+      ]
+    pretty (Theorem provenance (hyps, concl)) =
+      unwords [
+        L.intercalate ",\n" $ map pretty hyps
+      , "⊢"
+      , pretty concl
+      , pretty provenance
+      ]
 
   --
   -- ** The basic HOL theorems
@@ -680,7 +707,7 @@ where
   reflexivity t u =
     if t == u then do
       eq <- mkEquality t t
-      return $ Theorem ([], eq)
+      return $ Theorem DerivedSafely ([], eq)
     else
       fail . unwords $ [
         "Two terms passed to `reflexivity' are not alpha-equivalent.  Was",
@@ -692,21 +719,21 @@ where
   --  @Gamma ⊢ t = s@.  Note, not strictly necessary to have this in
   --  the kernel.
   symmetry :: Theorem -> Inference Theorem
-  symmetry (Theorem (hyps, concl)) = do
+  symmetry (Theorem p (hyps, concl)) = do
     (left, right) <- fromEquality concl
     eq            <- mkEquality right left
-    return $ Theorem (hyps, eq)
+    return $ Theorem p (hyps, eq)
 
   -- |Produces a derivation of @Gamma u Delta ⊢ t = v@ given a derivation of
   --  @Gamma ⊢ t = s@ and @Delta ⊢ s = u@ for all t, u and v.
   transitivity :: Theorem -> Theorem -> Inference Theorem
-  transitivity (Theorem (hyps, concl)) (Theorem (hyps', concl')) = do
+  transitivity (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     (left, right)   <- fromEquality concl
     (left', right') <- fromEquality concl'
     if right == left'
       then do
         eq              <- mkEquality left right'
-        return $ Theorem (hyps `union` hyps', eq)
+        return $ Theorem (p `track` q) (hyps `union` hyps', eq)
       else
         fail . unwords $ [
           "The two derivations supplied to `transitivity' are not valid",
@@ -721,26 +748,26 @@ where
     typeOfT <- typeOf t
     if typeOfT == boolType
       then
-        return $ Theorem ([t], t)
+        return $ Theorem DerivedSafely ([t], t)
       else
         fail $ "Term given to `assume' is not a formula, but has type `" ++ pretty typeOfT ++ "'."
 
   -- |Produces a derivation of @(Gamma - q) u (Delta - p) ⊢ t@ from a pair of
   --  derivations of @Gamma ⊢ p@ and @Gamma ⊢ q@.
   deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
-  deductAntiSymmetric (Theorem (hyps, concl)) (Theorem (hyps', concl')) = do
+  deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     eq <- mkEquality concl concl'
-    return $ Theorem (delete concl hyps' `union` delete concl' hyps, eq)
+    return $ Theorem (p `track` q) (delete concl hyps' `union` delete concl' hyps, eq)
 
   -- |Produces a derivation of @Gamma ⊢ \x:ty. t = \x:ty. u@ given a derivation
   -- of the form @Gamma ⊢ t = u@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
-  abstract name ty (Theorem (hyps, concl)) = do
+  abstract name ty (Theorem p (hyps, concl)) = do
     if not $ name `S.member` fvs hyps
       then do
         (left, right) <- fromEquality concl
         eq            <- mkEquality (mkLam name ty left) (mkLam name ty right)
-        return $ Theorem (hyps, eq)
+        return $ Theorem p (hyps, eq)
       else
         fail . unwords $ [
           "Supplied name for lambda-abstraction to `abstract' appears free",
@@ -750,11 +777,11 @@ where
   -- |Produces a derivation of @Gamma u Delta ⊢ q@ given two derivations of
   --  @Gamma ⊢ p = q@ and @Delta ⊢ p@ respectively.
   equalityModusPonens :: Theorem -> Theorem -> Inference Theorem
-  equalityModusPonens (Theorem (hyps, concl)) (Theorem (hyps', concl')) = do
+  equalityModusPonens (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     (left, right) <- fromEquality concl
     if concl' == left
       then
-        return $ Theorem (hyps `union` hyps', right)
+        return $ Theorem (p `track` q) (hyps `union` hyps', right)
       else
         fail . unwords $ [
           "Conclusion of second theorem supplied to `equalityModusPonens' is",
@@ -766,13 +793,13 @@ where
   -- |Produces a derivation of @Gamma u Delta ⊢ f x = g y@ given two derivations
   --  of the form @Gamma ⊢ f = g@ and @Delta ⊢ x = y@.
   combine :: Theorem -> Theorem -> Inference Theorem
-  combine (Theorem (hyps, concl)) (Theorem (hyps', concl')) = do
+  combine (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     (f, g) <- fromEquality concl
     (x, y) <- fromEquality concl'
     left   <- mkApp f x
     right  <- mkApp g y
     eq     <- mkEquality left right
-    return $ Theorem (hyps `union` hyps', eq)
+    return $ Theorem (p `track` q) (hyps `union` hyps', eq)
 
   -- |Produces a derivation @{} ⊢ (\x:ty. t)u = t[x := u]@ given an application.
   --  Note that this derivation rule is stronger than its HOL-light counterpart,
@@ -780,7 +807,7 @@ where
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
       eq <- mkEquality t $ termSubst subst body
-      return $ Theorem ([], eq)
+      return $ Theorem DerivedSafely ([], eq)
     where
       subst :: Substitution Term
       subst = mkSubstitution name b
@@ -800,7 +827,7 @@ where
         if not $ v `S.member` fv left
           then do
             eq <- mkEquality t left
-            return $ Theorem ([], eq)
+            return $ Theorem DerivedSafely ([], eq)
           else
             fail . unwords $ [
               "Cannot apply `eta' as variable " ++ name ++ "appears free ",
@@ -815,12 +842,12 @@ where
     ]
 
   typeInstantiation :: Substitution Type -> Theorem -> Inference Theorem
-  typeInstantiation theta (Theorem (hyps, concl)) = do
-    return $ Theorem (map (termTypeSubst theta) hyps, termTypeSubst theta concl)
+  typeInstantiation theta (Theorem p (hyps, concl)) = do
+    return $ Theorem p (map (termTypeSubst theta) hyps, termTypeSubst theta concl)
 
   instantiation :: Substitution Term -> Theorem -> Inference Theorem
-  instantiation theta (Theorem (hyps, concl)) = do
-    return $ Theorem (map (termSubst theta) hyps, termSubst theta concl)
+  instantiation theta (Theorem p (hyps, concl)) = do
+    return $ Theorem p (map (termSubst theta) hyps, termSubst theta concl)
 
   --
   -- * Extending the logic
@@ -834,7 +861,7 @@ where
           then do
             let const = mkConst $ DefinedConstant name typ t
             eq <- mkEquality const t
-            return (const, Theorem ([], eq))
+            return (const, Theorem DerivedSafely ([], eq))
           else
             fail . unwords $ [
               "Free type variables of definiens supplied to `newDefinedConstant'",
@@ -851,7 +878,7 @@ where
   primitiveNewAxiom term = do
     typeOfTerm <- typeOf term
     if typeOfTerm == boolType then
-      return $ Theorem ([], term)
+      return $ Theorem FromAxiom ([], term)
     else
       fail . unwords $ [
         "Term `" ++ pretty term ++ "' passed to `newAxiom' is not",
