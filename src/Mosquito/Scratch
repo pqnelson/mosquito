@@ -1,0 +1,179 @@
+--
+  -- * Development of HOL within Caracal.  Move elsewhere when we have a
+  --   clear idea of what a theory is.
+  --
+
+  --
+  -- ** Truth and related concepts
+  --
+
+  -- |Definition of logical truth.
+  trueDecl :: Inference (Term, Theorem)
+  trueDecl = do
+    let b  = mkVar "a" boolType
+    let t  = mkLam "a" boolType b
+    eq     <- mkEquality t t
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "true") boolType eq
+
+  trueC :: Inference Term
+  trueC = constantOfDecl trueDecl
+
+  trueD :: Inference Theorem
+  trueD = theoremOfDecl trueDecl
+
+  -- |Produces a derivation of @{} ⊢ true@.
+  trueI :: Inference Theorem
+  trueI = do
+    trueD <- trueD
+    symmT <- symmetry trueD
+    let b = mkVar "a" boolType
+    let t = mkLam "a" boolType b
+    reflT <- reflexivity t
+    equalityModusPonens symmT reflT
+
+  -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
+  --  @Gamma ⊢ p = true@.
+  trueE :: Theorem -> Inference Theorem
+  trueE thm = do
+    trueT <- trueI
+    symmT <- symmetry thm
+    equalityModusPonens symmT trueT
+
+  -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
+  --  @Gamma ⊢ true = p@.
+  trueE' :: Theorem -> Inference Theorem
+  trueE' thm = do
+    symmT <- symmetry thm
+    trueE symmT
+
+  --
+  -- ** Conjunction
+  --
+
+  -- |Definition of logical conjunction.
+  conjunctionDecl :: Inference (Term, Theorem)
+  conjunctionDecl = do
+    trueC      <- trueC
+    rightBody' <- mkApp (mkVar "f" binaryConnectiveType) trueC -- f true
+    rightBody  <- mkApp rightBody' trueC -- f true true
+    let right  =  mkLam "f" binaryConnectiveType rightBody -- \f. (f true true)
+    leftBody'  <- mkApp (mkVar "f" binaryConnectiveType) (mkVar "p" boolType) -- f p
+    leftBody   <- mkApp leftBody' (mkVar "q" boolType) -- f p q
+    let left   =  mkLam "f" binaryConnectiveType leftBody -- \f. f p q
+    eq         <- mkEquality left right -- \f. f p q = \f. f true true
+    let def    =  mkLam "p" boolType (mkLam "q" boolType eq)
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "_∧_") binaryConnectiveType def
+
+  conjunctionC :: Inference Term
+  conjunctionC = constantOfDecl conjunctionDecl
+
+  conjunctionT :: Inference Theorem
+  conjunctionT = theoremOfDecl conjunctionDecl
+
+  -- |Constructs a conjunction from two terms.
+  mkConjunction :: Term -> Term -> Inference Term
+  mkConjunction left right = do
+    conjunctionC <- conjunctionC
+    pre          <- mkApp conjunctionC left
+    mkApp pre right
+
+  -- |Produces a derivation of @Gamma u Delta ⊢ p ∧ q@ from a pair of
+  --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
+  conjunctionI :: Theorem -> Theorem -> Inference Theorem
+  conjunctionI left right = undefined
+
+  -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
+  --  @Gamma ⊢ p ∧ q@.
+  conjunctionELeft :: Theorem -> Inference Theorem
+  conjunctionELeft thm = undefined
+
+  -- |Produces a derivation of @Gamma ⊢ q@ from a derivation of
+  --  @Gamma ⊢ p ∧ q@.
+  conjunctionERight :: Theorem -> Inference Theorem
+  conjunctionERight thm = undefined
+
+  --
+  -- ** Implication
+  --
+
+  implicationDecl :: Inference (Term, Theorem)
+  implicationDecl = do
+    conjunction <- mkConjunction (mkVar "p" boolType) (mkVar "q" boolType)
+    body        <- mkEquality conjunction (mkVar "p" boolType)
+    let def     =  mkLam "p" boolType (mkLam "q" boolType body)
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "_⇒_") binaryConnectiveType def
+
+  implicationC :: Inference Term
+  implicationC = constantOfDecl implicationDecl
+
+  implicationT :: Inference Theorem
+  implicationT = theoremOfDecl implicationDecl
+
+  mkImplication :: Term -> Term -> Inference Term
+  mkImplication left right = do
+    implicationC <- implicationC
+    pre          <- mkApp implicationC left
+    mkApp pre right
+
+  --
+  -- ** Universal quantification
+  --
+
+  -- \P : a -> Bool. P = \x. T
+  universalDecl :: Inference (Term, Theorem)
+  universalDecl = do
+    trueC     <- trueC
+    let right = mkLam "a" alphaType trueC
+    let left  = mkVar "P" (mkFunctionType alphaType boolType)
+    eq        <- mkEquality left right
+    let def   = mkLam "P" (mkFunctionType alphaType boolType) eq
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "∀") quantifierType def
+
+  universalC :: Inference Term
+  universalC = constantOfDecl universalDecl
+
+  universalT :: Inference Theorem
+  universalT = theoremOfDecl universalDecl
+
+  mkUniversal :: Term -> Inference Term
+  mkUniversal body = do
+    universalC <- universalC
+    mkApp universalC body
+
+  --
+  -- ** Logical disjunction
+  --
+
+  -- \P, Q. forall r. (P ==> r) ==> (Q == r) ==> r
+  -- XXX: bug here somewhere
+  disjunctionDecl :: Inference (Term, Theorem)
+  disjunctionDecl = do
+    impT1     <- mkImplication (mkVar "P" boolType) (mkVar "r" boolType)
+    impT2     <- mkImplication (mkVar "Q" boolType) (mkVar "r" boolType)
+    left      <- mkImplication impT1 impT2
+    body      <- mkImplication left (mkVar "r" boolType)
+    let lam   =  mkLam "r" boolType body
+    universal <- mkUniversal lam
+    let def   =  mkLam "P" boolType (mkLam "Q" boolType universal)
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "_∨_") binaryConnectiveType def
+
+  disjunctionC :: Inference Term
+  disjunctionC = constantOfDecl disjunctionDecl
+
+  disjunctionT :: Inference Theorem
+  disjunctionT = theoremOfDecl disjunctionDecl
+
+  --
+  -- ** Logical false
+  --
+
+  falseDecl :: Inference (Term, Theorem)
+  falseDecl = do
+    def <- mkUniversal (mkLam "a" boolType $ mkVar "a" boolType)
+    newDefinedConstant (mkQualifiedName ["Caracal", "Bool"] "false") boolType def
+
+  falseC :: Inference Term
+  falseC = constantOfDecl falseDecl
+
+  falseT :: Inference Theorem
+  falseT = theoremOfDecl falseDecl

@@ -39,8 +39,10 @@ module Mosquito.Kernel.Term (
   -- ** Term substitutions
   TermSubstitution, termSubst, termTypeSubst,
   -- * HOL theorems
+  Provenance,
+  track,
   Theorem,
-  hypotheses, conclusion,
+  hypotheses, conclusion, provenance,
   union,
   -- ** Basic HOL theorems
   reflexivity, symmetry, transitivity, abstract, combine, eta, beta,
@@ -646,35 +648,54 @@ where
   -- * HOL theorems
   -- 
 
+  -- |A provenance tag for theorems.  Indelibly marks axioms
+  --  with a @FromAxiom@ tag.  Everything that is not introduced
+  --  as an axiom via the @primitiveNewAxiom@ function is said
+  --  to be derived safely.
   data Provenance
     = FromAxiom
     | DerivedSafely
     deriving (Eq, Show, Ord)
 
+  -- |Takes two provenance tags and produces a new one.  If either
+  --  of the tags provided as input are @FromAxiom@ then the output
+  --  will also be @FromAxiom@, otherwise will be @DerivedSafely@.
+  --  Used to update provenance information in the primitive
+  --  inference rules of the Mosquito logic provided below.
   track :: Provenance -> Provenance -> Provenance
-  FromAxiom     `track` _              = FromAxiom
-  _             `track`  FromAxiom     = FromAxiom
-  DerivedSafely `track`  DerivedSafely = DerivedSafely
+  FromAxiom     `track` _             = FromAxiom
+  _             `track` FromAxiom     = FromAxiom
+  DerivedSafely `track` DerivedSafely = DerivedSafely
 
   instance Pretty Provenance where
-    pretty FromAxiom     = "[!]"
-    pretty DerivedSafely = "[✔]"
+    pretty FromAxiom     = "\t[✘]"
+    pretty DerivedSafely = "\t[✔]"
 
+  -- |A theorem consists of a provenance tag detailing how it was
+  --  derived (or more accurately, if any axiom was ever used in
+  --  the derivation) combined with a list of hypotheses and a single
+  --  conclusion.  All terms making up the hypotheses and conclusion
+  --  must be boolean-typed.
   data Theorem = Theorem Provenance ([Term], Term)
     deriving(Show, Eq, Ord)
 
+  -- |Obtain the hypotheses of a theorem.
   hypotheses :: Theorem -> [Term]
   hypotheses (Theorem _ (hyps, concl)) = hyps
 
+  -- |Obtain the conclusion of a theorem.
   conclusion :: Theorem -> Term
   conclusion (Theorem _ (hyps, concl)) = concl
 
+  -- |Obtain the provenance flag of a theorem.
   provenance :: Theorem -> Provenance
   provenance (Theorem p _) = p
 
+  -- |Alpha-equivalent aware set-like union of term lists.
   union :: [Term] -> [Term] -> [Term]
   union = L.unionBy (==)
 
+  -- |Alpha-equivalent aware set-like delete of term lists.
   delete :: Term -> [Term] -> [Term]
   delete = L.deleteBy (==)
 
@@ -701,19 +722,11 @@ where
   -- ** The basic HOL theorems
   --
 
-  -- |Produces a derivation of @{} ⊢ t = u@ given a well-typed term @t@
-  --  and @u@ providing the two terms are alpha-equivalent.
-  reflexivity :: Term -> Term -> Inference Theorem
-  reflexivity t u =
-    if t == u then do
-      eq <- mkEquality t t
-      return $ Theorem DerivedSafely ([], eq)
-    else
-      fail . unwords $ [
-        "Two terms passed to `reflexivity' are not alpha-equivalent.  Was",
-        "expecting `" ++ pretty t ++ "' to be alpha-equivalent with term",
-        "`" ++ pretty u ++ "'."
-      ]
+  -- |Produces a derivation of @{} ⊢ t = t@ given a well-typed term @t@.
+  reflexivity :: Term -> Inference Theorem
+  reflexivity t = do
+    eq <- mkEquality t t
+    return $ Theorem DerivedSafely ([], eq)
 
   -- |Produces a derivation of @Gamma ⊢ s = t@ given a derivation of
   --  @Gamma ⊢ t = s@.  Note, not strictly necessary to have this in
@@ -752,12 +765,13 @@ where
       else
         fail $ "Term given to `assume' is not a formula, but has type `" ++ pretty typeOfT ++ "'."
 
-  -- |Produces a derivation of @(Gamma - q) u (Delta - p) ⊢ t@ from a pair of
-  --  derivations of @Gamma ⊢ p@ and @Gamma ⊢ q@.
+  -- |Produces a derivation of @(Gamma - q) u (Delta - p) ⊢ p = q@ from a pair of
+  --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
   deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
   deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     eq <- mkEquality concl concl'
-    return $ Theorem (p `track` q) (delete concl hyps' `union` delete concl' hyps, eq)
+    let concl'' = delete concl hyps' `union` delete concl' hyps
+    return $ Theorem (p `track` q) (concl'', eq)
 
   -- |Produces a derivation of @Gamma ⊢ \x:ty. t = \x:ty. u@ given a derivation
   -- of the form @Gamma ⊢ t = u@.
@@ -864,13 +878,13 @@ where
             return (const, Theorem DerivedSafely ([], eq))
           else
             fail . unwords $ [
-              "Free type variables of definiens supplied to `newDefinedConstant'",
+              "Free type variables of definiens supplied to `primitiveNewDefinedConstant'",
               "is not a subset of the free type variables of the type of the",
               "left hand side, in term: `" ++ pretty t ++ "'."
             ]
       else
         fail . unwords $ [
-          "Definiens supplied to `newDefinedConstant' has free variables, in",
+          "Definiens supplied to `primitiveNewDefinedConstant' has free variables, in",
           "term: `" ++ pretty t ++ "'."
         ]
 
