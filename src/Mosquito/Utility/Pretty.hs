@@ -41,6 +41,9 @@ where
     pretty (Left  l) = pretty l
     pretty (Right r) = pretty r
 
+  instance Pretty Int where
+    pretty = show
+
   --
   -- * Input and output
   --

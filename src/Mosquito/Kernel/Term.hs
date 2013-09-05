@@ -43,7 +43,7 @@ module Mosquito.Kernel.Term (
   track,
   Theorem,
   hypotheses, conclusion, provenance,
-  union,
+  union, delete, deleteTheorem,
   -- ** Basic HOL theorems
   reflexivity, symmetry, transitivity, abstract, combine, eta, beta,
   assume, equalityModusPonens, deductAntiSymmetric,
@@ -698,6 +698,13 @@ where
   -- |Alpha-equivalent aware set-like delete of term lists.
   delete :: Term -> [Term] -> [Term]
   delete = L.deleteBy (==)
+
+  deleteTheorem :: Term -> [Theorem] -> [Theorem]
+  deleteTheorem t [] = []
+  deleteTheorem t (Theorem p ([], concl):xs)
+    | t == concl = deleteTheorem t xs
+    | otherwise  = Theorem p ([], concl):deleteTheorem t xs
+  deleteTheorem t (x:xs) = x:deleteTheorem t xs
 
   --
   -- ** Pretty printing theorems

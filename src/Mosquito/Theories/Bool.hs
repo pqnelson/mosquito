@@ -68,11 +68,49 @@ module Mosquito.Theories.Bool where
     trueC <- trueC
     trueD <- trueD
     conj  <- conjecture "true-intro" trueC
-    conj  <- apply (equalityModusPonensTac eq) conj
-    conj  <- apply (try reflexivityTac) conj
-    conj  <- apply symmetryTac conj
-    conj  <- apply (solveTac trueD) conj
+    conj  <-
+      by [
+        equalityModusPonensTac eq
+      , selectITac (== 1) `preceeding` reflexivityTac
+      , selectITac (== 0) `preceeding` symmetryTac
+      , selectITac (== 0) `preceeding` solveTac trueD
+      ] conj
     qed conj
+
+  trueIPreTac :: PreTactic
+  trueIPreTac assms concl = do
+    trueC <- trueC
+    if concl == trueC then
+      return $ Refine (\[] -> trueI) []
+    else
+      fail . unwords $ [
+        "Conclusion passed to `trueITac' not `true'."
+      ]
+
+  trueITac :: Tactic
+  trueITac = apply trueIPreTac
+
+  -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
+  --  @Gamma ⊢ p = true@.
+  trueEqE :: Theorem -> Inference Theorem
+  trueEqE theorem = do
+    trueI <- trueI
+    symm  <- symmetry theorem
+    equalityModusPonens theorem trueI
+
+  -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
+  --  of @Gamma ⊢ p@.
+  trueEqI :: Theorem -> Inference Theorem
+  trueEqI theorem = do
+    let p = conclusion theorem
+    assmP <- assume p  -- p |- p
+    trueI <- trueI     -- |- true
+    das1  <- deductAntiSymmetric assmP trueI -- p |- p = true
+    let c = conclusion das1
+    assmC <- assume c -- p = true |- p = true
+    eqE   <- trueEqE assmC -- p = true |- p
+    deductAntiSymmetric das1 eqE
+
 
   --
   -- ** Universal quantification
@@ -101,24 +139,27 @@ module Mosquito.Theories.Bool where
     let lam  =  mkLam name ty body
     mkApp inst lam
 
-  unfoldAppLTac :: TheoremPreTactic
-  unfoldAppLTac theorem assms concl = do
-    (left, right)   <- fromEquality . conclusion $ theorem
-    (left', right') <- fromApp concl
-    if left == left' then do
-      guess  <- mkApp right right'
-      equalityModusPonensTac guess assms concl
-    else
-      fail $ "unfoldAppLTac"
-
   reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
-    let t =  mkVar "t" alphaType
-    eq    <- mkEquality t t
-    conj  <- mkForall "t" alphaType eq
+    let t   =  mkVar "t" alphaType
+    eq      <- mkEquality t t
+    refl    <- reflexivity t
+    trueEqI <- trueEqI refl
+    conj    <- mkForall "t" alphaType eq
     forallD <- forallD
-    prf   <- conjecture "reflexivity-strong" conj
-    prf   <- apply (unfoldAppLTac forallD) prf
-    prf   <- apply (try combineTac `subsequently` try reflexivityTac) prf
+    prf     <- conjecture "reflexivity-strong" conj
+    prf     <-
+      by [
+        selectITac (== 0) `preceeding` unfoldAppLTac forallD
+      , selectITac (== 0) `preceeding` symmetryTac
+      , selectITac (== 0) `preceeding` combineTac
+      , selectITac (== 1) `preceeding` baseAuto
+      , selectITac (== 0) `preceeding` solveTac forallD
+      , selectITac (== 0) `preceeding` reductionTac
+      , selectITac (== 1) `preceeding` abstractTac
+      , selectITac (== 0) `preceeding` symmetryTac
+      , selectITac (== 0) `preceeding` betaTac
+      , selectITac (== 0) `preceeding` solveTac trueEqI
+      ] prf
     return prf
 
   --
