@@ -1,4 +1,11 @@
-module Mosquito.DerivedRules where
+-- |Derived, useful theorems --- direct consequences of the primitive inference
+--  rules defined in the kernel.
+module Mosquito.DerivedRules (
+  -- * Restricted combination rules
+  combineL, combineR,
+  -- * Lambda-abstraction
+  abstracts
+) where
 
   import Prelude hiding (fail)
   import Control.Monad hiding (fail)
@@ -7,36 +14,31 @@ module Mosquito.DerivedRules where
   import Mosquito.Kernel.Term
 
   --
-  -- * Some utilities
+  -- * Derived rules
   --
-
-  constantOfDecl :: Inference (Term, a) -> Inference Term
-  constantOfDecl decl = decl >>= \decl -> return . fst $ decl
-
-  theoremOfDecl :: Inference (a, Theorem) -> Inference Theorem
-  theoremOfDecl decl = decl >>= \decl -> return . snd $ decl
-
-  --
-  -- * True derived rules that belong here...
-  --
-
-  simpleReflexivity :: Term -> Inference Theorem
-  simpleReflexivity t = reflexivity t t 
 
   -- |Produces a derivation of @Gamma ⊢ f x = f y@ from a derivation of
   --  @Gamma ⊢ x = y@ provided the supplied term @f@ is of the correct type.
   combineL :: Term -> Theorem -> Inference Theorem
   combineL t thm = do
-    eq <- simpleReflexivity t
+    eq <- reflexivity t
     combine eq thm
 
   -- |Produces a derivation of @Gamma ⊢ f x = g x@ from a derivation of
   --  @Gamma ⊢ f = g@ provided the supplied term @x@ is of the correct type.
   combineR :: Term -> Theorem -> Inference Theorem
   combineR t thm = do 
-    eq <- simpleReflexivity t
+    eq <- reflexivity t
     combine thm eq
     
+  -- |Produces a derivation of @Gamma ⊢ t = u'@ given a derivation of @Gamma ⊢ t = u@
+  --  where u and u' are alpha-equivalent terms, failing when the terms are not
+  --  alpha-equivalent.
+  alpha :: Term -> Theorem -> Inference Theorem
+  alpha suggestion thm = undefined
+
+  -- |Produces a derivation of @Gamma ⊢ λx1:ty1 ... λxn:tyn. t = λy1:ty'1 ... λyn:ty'n. u@
+  --  from a derivation of @Gamma ⊢ t = u@.
   abstracts :: [(String, Type)] -> Theorem -> Inference Theorem
-  abstracts []              thm = return thm
-  abstracts ((name, ty):xs) thm = abstract name ty thm >> abstracts xs thm
+  abstracts xs thm =
+    foldr (\(name, ty) -> (>> abstract name ty thm)) (return thm) xs

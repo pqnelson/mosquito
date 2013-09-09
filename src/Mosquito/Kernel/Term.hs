@@ -1,10 +1,23 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
+-- |The Mosquito kernel, defining types, terms, theorems, and providing primitive
+--  inference rules upon which everything else is built, along with simple mechanisms
+--  for extending the Mosquito logic (e.g. declaring axioms, defining new types and
+--  constants).
+--
+--  Everything in this file is considered trusted, that is, to trust the logical
+--  soundness and consistency of the whole system you must trust that this file correctly
+--  implements a version of classical, extensional higher-order logic, a la HOL4 and
+--  Isabelle/HOL.  Due to the internal representation of terms, types and theorems not
+--  being exposed to the rest of the system (via Haskell's abstraction mechanisms),
+--  and with terms, types and theorems being correct by contruction (if this file is
+--  bug free), consistency of the whole system is guaranteed (the so-called LCF
+--  approach).
 module Mosquito.Kernel.Term (
   -- * Some useful definitions
   Arity, Definition,
   -- * The inference monad
-  Inference(..), fail,
+  Inference(..), fail, inference,
   -- * Type operator descriptions
   TypeOperatorDescription,
   isDefinedTypeOperatorDescription, isPrimitiveTypeOperatorDescription,
@@ -28,8 +41,13 @@ module Mosquito.Kernel.Term (
   mkVar, mkConst, mkApp, mkLam,
   isVar, isConst, isApp, isLam,
   fromVar, fromConst, fromApp, fromLam,
-  typeOf, fv, fvs, swap,
-  -- ** Equality
+  -- ** Type checking
+  typeOf,
+  -- ** Alpha-equivalence and free variables
+  fv, fvs, swap,
+  -- ** Structural equality
+  StructuralEquality, mkStructuralEquality,
+  -- ** Equality within the logic
   equality, isEquality, fromEquality, mkEquality,
   -- * Substitutions
   Substitution,
@@ -58,6 +76,7 @@ where
 
   import Control.Monad hiding (fail)
 
+  import qualified Data.Foldable as F
   import Data.Maybe
   import qualified Data.List as L
   import qualified Data.Set as S
@@ -80,10 +99,20 @@ where
   -- * The inference monad
   --
 
+  -- |The inference monad, an error monad used throughout Mosquito to signal
+  --  success or failure of a computation.
   data Inference a
     = Fail String
     | Success a
 
+  -- |An elimination principle for the Inference monad.
+  inference :: Inference a -> (String -> b) -> (a -> b) -> b
+  inference (Fail err)  f s = f err
+  inference (Success t) f s = s t
+
+  -- |A function signifying a failing computation within the Inference monad.
+  --  Parameter is the error message that will be displayed when the error
+  --  is encountered at top-level.
   fail :: String -> Inference a
   fail = Fail
 
@@ -103,11 +132,6 @@ where
     return            = Success
     (Fail err)  >>= f = Fail err
     (Success t) >>= f = f t
-
-  instance MonadPlus Inference where
-    mzero               = Fail "The computation failed"
-    mplus (Fail err)  j = j
-    mplus (Success t) j = Success t
 
   --
   -- * Type operator descriptions.
@@ -199,41 +223,55 @@ where
   -- ** Utility functions on types.
   --
 
-  -- |Tests whether a type is a type variable.
+  -- |Tests whether a Type is a type variable.
   isTyVar :: Type -> Bool
   isTyVar TyVar{} = True
   isTyVar _       = False
 
-  -- |Tests whether a 
+  -- |Tests whether a Type is a type operator.
   isTyOperator :: Type -> Bool
   isTyOperator TyOperator{} = True
   isTyOperator _            = False
 
+  -- |Tests whether a Type is a function type.
   isFunction :: Type -> Bool
   isFunction (TyOperator f [d, r]) = f == functionDescription
   isFunction _                     = False
 
+  -- |Tests whether a Type is a propositional (Boolean) type.
   isProposition :: Type -> Bool
   isProposition (TyOperator b []) = b == boolDescription
   isProposition _                 = False
 
+  -- |Deconstructs a type variable into its String component, failing
+  --  with an error message if the input Type is not a type variable
+  --  otherwise.
   fromTyVar :: Type -> Inference String
   fromTyVar (TyVar v) = return v
   fromTyVar t         = fail $ "Type `" ++ pretty t ++ "' is not a type variable."
 
+  -- |Deconstructs a type operator into its TypeOperatorDescription and
+  --  [Type] components, failing with an error message if the input Type is
+  --  not a type operator otherwise.
   fromTyOperator :: Type -> Inference (TypeOperatorDescription, [Type])
   fromTyOperator (TyOperator d args) = return (d, args)
   fromTyOperator t = fail $ "Type `" ++ pretty t ++ "' is not a type operator."
 
+  -- |Deconstructs a function type into its domain and range types, failing
+  --  with an error message if the input Type is not a function type otherwise.
   fromFunction :: Type -> Inference (Type, Type)
   fromFunction t@(TyOperator (PrimitiveTypeOperator f 2) [d, r])
     | f == functionQualifiedName = return (d, r)
     | otherwise                  = fail $ "Type `" ++ pretty t ++ "' is not a function type."
   fromFunction t = fail $ "Type `" ++ pretty t ++ "' is not a function type."
 
+  -- |Makes a type variable from a String.
   mkTyVar :: String -> Type
   mkTyVar = TyVar
 
+  -- |Makes a type operator from a TypeOperatorDescription and a list of
+  --  Type.  Fails with an error message if the input list length differs
+  --  from the declared arity of the TypeOperatorDescription.
   mkTyOperator :: TypeOperatorDescription -> [Type] -> Inference Type
   mkTyOperator d ts = do
     if length ts == typeOperatorDescriptionArity d
@@ -247,23 +285,32 @@ where
           " versus: " ++ show (length ts) ++ " supplied."
         ]
 
+  -- |Collects the free type variables of a type (by definition, as we have
+  --  no binding of type variables in types in Mosquito, all occurrences of
+  --  type variables in a type are deemed free) into a Set.
   ftv :: Type -> S.Set String
   ftv (TyVar v)           = S.singleton v
-  ftv (TyOperator d args) = foldr S.union S.empty $ map ftv args 
+  ftv (TyOperator d args) = L.foldr S.union S.empty $ map ftv args 
 
   --
   -- ** Some basic types.
   --
 
+  -- |Utility: the name of the alpha type variable, used quite often (but
+  --  entirely arbitrarily) throghout Mosquito.
   alphaName :: String
   alphaName = "α"
 
+  -- |The type variable corresponding to the alphaName above.
   alphaType :: Type
   alphaType = TyVar alphaName
 
+  -- |The Boolean type.
   boolType :: Type
   boolType = TyOperator boolDescription []
 
+  -- |Utility function for constructing a function type from two previously
+  --  defined types.
   mkFunctionType :: Type -> Type -> Type
   mkFunctionType d r = TyOperator functionDescription [d, r]
 
@@ -290,6 +337,14 @@ where
   -- * Constant descriptions.
   --
 
+  -- |The description of constants defined within the Mosquito logic.  Mosquito
+  --  constants fall into one of two types: primitive, such as equality, or
+  --  defined, which are defined by the user (following suitable checks to ensure
+  --  consistency remains).  All constants have a qualified name and type.
+  --  Defined constants also keep hold of the defining term used in their
+  --  definition to ensure that inconsistencies caused by mixing and matching
+  --  constants of the same name but defined in different proof assistant states
+  --  cannot creep into the system.
   data ConstantDescription
     = DefinedConstant   QualifiedName Type Definition
     | PrimitiveConstant QualifiedName Type
@@ -299,22 +354,28 @@ where
   -- * Utility functions on constant descriptions.
   --
 
+  -- |Tests whether a ConstantDescription is defined.
   isDefinedConstantDescription :: ConstantDescription -> Bool
   isDefinedConstantDescription DefinedConstant{} = True
   isDefinedConstantDescription _                 = False
 
+  -- |Tests whether a ConstantDescription is primitive.
   isPrimitiveConstantDescription :: ConstantDescription -> Bool
   isPrimitiveConstantDescription PrimitiveConstant{} = True
   isPrimitiveConstantDescription _                   = False
 
+  -- |Returns the qualified name of a ConstantDescription.
   constantDescriptionQualifiedName :: ConstantDescription -> QualifiedName
   constantDescriptionQualifiedName (DefinedConstant n _ _) = n
   constantDescriptionQualifiedName (PrimitiveConstant n _) = n
 
+  -- |Returns the type of a ConstantDescription.
   constantDescriptionType :: ConstantDescription -> Type
   constantDescriptionType (DefinedConstant _ t _) = t
   constantDescriptionType (PrimitiveConstant _ t) = t
 
+  -- |Returns the definition of a defined ConstantDescription.  Fails
+  --  if the ConstantDescription is primitive.
   constantDescriptionDefinition :: ConstantDescription -> Maybe Definition
   constantDescriptionDefinition (DefinedConstant _ _ d) = return d
   constantDescriptionDefinition PrimitiveConstant{}     = Nothing
@@ -323,12 +384,16 @@ where
   -- * Some useful predefined constant descriptions.
   --
 
+  -- |Qualified name of the (primitive) equality constant baked into
+  --  Mosquito's higher-order logic.
   equalityQualifiedName :: QualifiedName
   equalityQualifiedName = mkQualifiedName ["Mosquito"] "_=_"
 
+  -- |Polymorphic type of the equality constant.
   equalityType :: Type
   equalityType = mkFunctionType alphaType $ mkFunctionType alphaType boolType
 
+  -- |ConstantDescription describing Mosquito's equality constant.
   equalityDescription :: ConstantDescription
   equalityDescription = PrimitiveConstant equalityQualifiedName equalityType
 
@@ -345,8 +410,8 @@ where
   -- * HOL terms.
   --
 
-  -- |The type of HOL terms, explicitly-typed terms of the lambda-calculus
-  --  extended with constants.
+  -- |The type of HOL terms, explicitly-typed Church-style terms of
+  -- the lambda-calculus extended with constants.
   data Term
     = Var   String Type
     | Const ConstantDescription
@@ -358,10 +423,12 @@ where
   -- * Utility functions on terms.
   --
 
+  -- |Tests whether a Term is a variable.
   isVar :: Term -> Bool
   isVar Var{} = True
   isVar _     = False
 
+  -- |Tests whether a Term is a constant.
   isConst :: Term -> Bool
   isConst Const{} = True
   isConst _       = False
@@ -561,8 +628,7 @@ where
   unqualifiedNamesOfType (TyVar v)               = S.singleton v
   unqualifiedNamesOfType (TyOperator descr args) =
     unqualifiedNamesOfTypeOperatorDescription descr `S.union`
-      foldr S.union S.empty (map unqualifiedNamesOfType args)
-
+      L.foldr S.union S.empty (map unqualifiedNamesOfType args)
 
   unqualifiedNamesOfTerm :: Term -> S.Set String
   unqualifiedNamesOfTerm (Var a ty) =
@@ -578,32 +644,41 @@ where
       unqualifiedNamesOfTerm bdy
     ]
 
+  -- |Collects the free variables (i.e. variables appearing within a
+  --  term not bound by a lambda-abstraction) into a Set.
   fv :: Term -> S.Set String
   fv (Var a ty)     = S.singleton a
   fv (Const d)      = S.empty
   fv (App l r)      = fv l `S.union` fv r
   fv (Lam a ty bdy) = a `S.delete` fv bdy
 
+  -- |Collects the type variables appearing anywhere within a term
+  --  into a Set.  Lambda abstractions, constants and term variables
+  --  are all decorated with types.  This function collects the type
+  --  variables of those types into a Set.
   typeVars :: Term -> S.Set String
   typeVars (Var a ty)     = ftv ty
   typeVars (Const d)      = ftv $ constantDescriptionType d
   typeVars (App l r)      = typeVars l `S.union` typeVars r
   typeVars (Lam a ty bdy) = ftv ty `S.union` typeVars bdy
 
-  fvs :: [Term] -> S.Set String
-  fvs ts = foldr S.union S.empty (map fv ts)
+  -- |Collects the free variables of a list of terms into a Set.
+  fvs :: (F.Foldable f, Functor f) => f Term -> S.Set String
+  fvs ts = F.foldr S.union S.empty $ fmap fv ts
 
+  -- |Performs a swapping of names within terms.  Used to define
+  --  alpha-equivalence later.
   swap :: String -> String -> Term -> Term
   swap a b (Var c ty)
     | a == c    = Var b ty
     | b == c    = Var a ty
     | otherwise = Var c ty
   swap a b (Const d) = Const d
-  swap a b (App l r) = App (swap a b l) (swap a b r)
+  swap a b (App l r) = App (swap a b l) $ swap a b r
   swap a b (Lam c ty body)
-    | a == c    = Lam b ty (swap a b body)
-    | b == c    = Lam a ty (swap a b body)
-    | otherwise = Lam c ty (swap a b body)
+    | a == c    = Lam b ty $ swap a b body
+    | b == c    = Lam a ty $ swap a b body
+    | otherwise = Lam c ty $ swap a b body
 
   instance Eq Term where
     (Var a ty)     == (Var b ty')      = a == b && ty == ty'
@@ -618,6 +693,33 @@ where
             bdy == swap a b bdy' && ty == ty'
     _ == _ = False
 
+  -- |Structural equality wrapper for terms so that we have both alpha-equivalence
+  --  on terms (using the Eq type class on raw terms) and a structural equality
+  --  (using the Eq type class on StructuralEquality).
+  newtype StructuralEquality = StructuralEquality { getTerm :: Term }
+
+  -- |Create a new StructuralEquality wrapper from a term.
+  mkStructuralEquality :: Term -> StructuralEquality
+  mkStructuralEquality = StructuralEquality
+
+  instance Eq StructuralEquality where
+    s == s' = go (getTerm s) (getTerm s')
+      where
+        go :: Term -> Term -> Bool
+        go (Var a ty)     (Var b ty')      = a == b && ty == ty'
+        go (Const c)      (Const d)        = c == d
+        go (App l r)      (App m s)        =
+          and [
+            mkStructuralEquality l == mkStructuralEquality m
+          , mkStructuralEquality r == mkStructuralEquality s
+          ]
+        go (Lam a ty bdy) (Lam b ty' bdy') =
+          and [
+            a == b
+          , ty == ty'
+          , mkStructuralEquality bdy == mkStructuralEquality bdy'
+          ]
+        go _ _ = False
   --
   -- * Pretty printing terms.
   --
@@ -627,10 +729,6 @@ where
     size Const{}        = 1
     size (App l r)      = 1 + size l + size r
     size (Lam a ty bdy) = 1 + size bdy
-
-  unwindApps :: Term -> [Term]
-  unwindApps (App l r) = l:unwindApps r
-  unwindApps t         = return t
 
   -- TODO: print mixfix syntax correctly like for types.
   instance Pretty Term where
@@ -777,10 +875,10 @@ where
   deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
   deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     eq <- mkEquality concl concl'
-    let concl'' = delete concl hyps' `union` delete concl' hyps
-    return $ Theorem (p `track` q) (concl'', eq)
+    let hyps'' = (delete concl hyps') `union` (delete concl' hyps)
+    return $ Theorem (p `track` q) (hyps'', eq)
 
-  -- |Produces a derivation of @Gamma ⊢ \x:ty. t = \x:ty. u@ given a derivation
+  -- |Produces a derivation of @Gamma ⊢ λx:ty. t = λx:ty. u@ given a derivation
   -- of the form @Gamma ⊢ t = u@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
   abstract name ty (Theorem p (hyps, concl)) = do
@@ -822,7 +920,7 @@ where
     eq     <- mkEquality left right
     return $ Theorem (p `track` q) (hyps `union` hyps', eq)
 
-  -- |Produces a derivation @{} ⊢ (\x:ty. t)u = t[x := u]@ given an application.
+  -- |Produces a derivation @{} ⊢ (λx:ty. t)u = t[x := u]@ given an application.
   --  Note that this derivation rule is stronger than its HOL-light counterpart,
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
@@ -838,7 +936,7 @@ where
       "beta-redex, in term: `" ++ pretty t ++ "'."
     ]
 
-  -- |Produces a derivation of @{} ⊢ \x:ty. (t x) = t@ when @x@ is not in the
+  -- |Produces a derivation of @{} ⊢ λx:ty. (t x) = t@ when @x@ is not in the
   --  free variables of @t@.  Note that unlike HOL-light we take this as a
   --  primitive inference rule in the kernel, as opposed to taking it as an
   --  axiom later.

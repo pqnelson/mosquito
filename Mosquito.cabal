@@ -51,9 +51,9 @@ library
   exposed-modules:     Mosquito.Kernel.Term
                        Mosquito.Kernel.QualifiedName
                        Mosquito.DerivedRules
+                       Mosquito.ProofState
                        Mosquito.Tactics
                        Mosquito.Theory
-                       Mosquito.Vector
                        Mosquito.Theories.Bool
                        Mosquito.Utility.Pretty
   
@@ -61,7 +61,7 @@ library
   -- other-modules:       
   
   -- Other library packages from which modules are imported.
-  build-depends:       base ==4.5.*, containers, fclabels
+  build-depends:       base ==4.5.*, containers, fclabels, mtl
   
   -- Directories containing source files.
   hs-source-dirs:      src

@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, TypeOperators #-}
+{-# LANGUAGE TemplateHaskell, TypeOperators, DoAndIfThenElse #-}
 
 module Mosquito.ProofState (
   Tag, ProofTree, ProofState,
@@ -13,14 +13,15 @@ where
 
   import Prelude hiding (fail)
 
-  import qualified Control.Monad.State as S
+  import qualified Control.Monad.State as State
+
+  import Data.Label
+  import qualified Data.List as L
+  import qualified Data.Set as S
 
   import Mosquito.Kernel.Term
 
   import Mosquito.Utility.Pretty
-
-  import Data.Label
-  import qualified Data.List as L
 
   data ProofStep
     = Refine Justification [ProofStep]
@@ -78,19 +79,37 @@ where
       go (Node _ children)   =
         sum . map go $ children
 
-  getSelectedGoals :: ProofState -> [(Int, String)]
-  getSelectedGoals state = S.evalState (go $ get derivation state) 0
+  getAllGoals :: ProofState -> S.Set ([Theorem], Term)
+  getAllGoals state = go $ get derivation state
     where
-      go :: ProofTree -> S.State Int [(Int, String)]
+      go :: ProofTree -> S.Set ([Theorem], Term)
+      go (Hole tag assms concl) = S.singleton (assms, concl)
+      go Leaf{} = S.empty
+      go (Node j children) =
+        S.unions . map go $ children
+
+  getSelectedGoals :: ProofState -> [([Theorem], Term)]
+  getSelectedGoals state = go $ get derivation state
+    where
+      go :: ProofTree -> [([Theorem], Term)]
+      go (Hole tag assms concl)
+        | tag == Selected  = return (assms, concl)
+        | otherwise        = []
+      go Leaf{} = []
+      go (Node j children) =
+        concatMap go children
+
+  getPrettySelectedGoals :: ProofState -> [(Int, String)]
+  getPrettySelectedGoals state = State.evalState (go $ get derivation state) 0
+    where
+      go :: ProofTree -> State.State Int [(Int, String)]
       go t@(Hole tag assms concl) = do
-        index <- S.get
-        S.modify (+ 1)
+        index <- State.get
+        State.modify (+ 1)
         return . return $ (index, pretty t)
-      go Leaf{} = do
-        index <- S.get
-        return []
+      go Leaf{} = return []
       go (Node j children) = do
-        children <- S.mapM go children
+        children <- State.mapM go children
         return . concat $ children
 
   --
@@ -187,12 +206,12 @@ where
         Node j $ map (walk pred) children
 
   selectITac :: (Int -> Bool) -> Tactic
-  selectITac pred state = return $ modify derivation (\d -> S.evalState (walk pred d) 0) state
+  selectITac pred state = return $ modify derivation (\d -> State.evalState (walk pred d) 0) state
     where
-      walk :: (Int -> Bool) -> ProofTree -> S.State Int ProofTree
+      walk :: (Int -> Bool) -> ProofTree -> State.State Int ProofTree
       walk pred (Hole tag assms concl) = do
-        index <- S.get
-        S.modify (+ 1)
+        index <- State.get
+        State.modify (+ 1)
         if pred index then
           return $ Hole Selected assms concl
         else
@@ -209,14 +228,14 @@ where
       if null assms then
         L.intercalate "\n" [
           selected
-        , unwords ["\t⊢ˀ", pretty concl]
+        , unwords ["\t⊢﹖", pretty concl]
         ]
       else
         L.intercalate "\n" [
           "Assuming:"
         , (L.intercalate "\n" . map pretty $ assms)
         , selected
-        , unwords ["\t⊢ˀ", pretty concl]
+        , unwords ["\t⊢﹖", pretty concl]
         ]
       where
         selected :: String
@@ -232,7 +251,7 @@ where
         L.intercalate "\n" [
           unwords ["Attempting to prove conjecture `", get name status, "'."]
         , unwords ["Goals:", show $ countOpen status, "open with", show $ countSelected status, "selected."]
-        , prettySelected . getSelectedGoals $ status
+        , prettySelected . getPrettySelectedGoals $ status
         ]
       where
         prettySelected :: [(Int, String)] -> String

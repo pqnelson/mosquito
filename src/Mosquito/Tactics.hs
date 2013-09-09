@@ -4,6 +4,7 @@ module Mosquito.Tactics where
 
   import Prelude hiding (fail)
 
+  import Control.Arrow
   import Control.Monad hiding (fail)
 
   import Data.Label
@@ -13,23 +14,20 @@ module Mosquito.Tactics where
 
   import Mosquito.Utility.Pretty
 
+  import Mosquito.DerivedRules
   import Mosquito.ProofState
 
   --
   -- * Tacticals
   --
 
-  inference :: Inference b -> (String -> a) -> (b -> a) -> a
-  inference (Fail err) f s = f err
-  inference (Success ok) f s = s ok
-
   (<|>) :: Tactic -> Tactic -> Tactic
   (<|>) left right state =
-    inference (left state) (const $ right state) return
+    inference (left state) (const . right $ state) return
 
   try :: Tactic -> Tactic
   try tactic state =
-    inference (tactic state) (const $ return state) return
+    inference (tactic state) (const . return $ state) return
 
   preceeding :: Tactic -> Tactic -> Tactic
   preceeding = (>=>)
@@ -45,6 +43,10 @@ module Mosquito.Tactics where
 
   --
   -- * Tactics
+  --
+
+  --
+  -- ** Alpha-equivalence
   --
 
   --
@@ -66,6 +68,28 @@ module Mosquito.Tactics where
   --
   -- ** Reflexivity
   --
+
+  simpleReflexivityPreTac :: PreTactic
+  simpleReflexivityPreTac assms concl = do
+    eq <- fromEquality concl
+    let (left, right) = (mkStructuralEquality *** mkStructuralEquality) eq
+    if left == right then do
+      theorem <- reflexivity . fst $ eq
+      return $ Refine (\[] -> return theorem) []
+    else
+      fail . unwords $ [
+        "Terms passed to `simpleReflexivityPreTac' are not structurally"
+      , unwords ["equivalent.  Was expecting `", pretty . fst $ eq, "' to"]
+      , unwords ["be structurally equivalent to `", pretty . snd $ eq, "'."]
+      ]
+
+  simpleReflexivityTac :: Tactic
+  simpleReflexivityTac =
+      selectCandidates `preceeding` apply simpleReflexivityPreTac
+    where
+      selectCandidates :: Tactic
+      selectCandidates =
+        selectPTac (\assms concl -> isEquality concl)
 
   reflexivityPreTac :: PreTactic
   reflexivityPreTac assms concl = do
@@ -137,6 +161,20 @@ module Mosquito.Tactics where
   combineTac :: Tactic
   combineTac = apply combinePreTac
 
+  combineLPreTac :: PreTactic
+  combineLPreTac assms concl = do
+    (left, right)   <- fromEquality concl
+    (leftL, rightL) <- fromApp left
+    (leftR, rightR) <- fromApp right
+    if leftL == leftR then do
+      eq <- mkEquality rightL rightR
+      return $ Refine (\[t] -> combineL leftL t) [Open assms eq]
+    else
+      fail "`combineLTac'"
+
+  combineLTac :: Tactic
+  combineLTac = apply combineLPreTac
+
   --
   -- ** Equality modus ponens
   --
@@ -156,8 +194,8 @@ module Mosquito.Tactics where
   deductAntiSymmetricPreTac :: PreTactic
   deductAntiSymmetricPreTac assms concl = do
     (left, right) <- fromEquality concl
-    let assmsL = right `deleteTheorem` assms
-    let assmsR = left `deleteTheorem` assms
+    let assmsR = right `deleteTheorem` assms
+    let assmsL = left `deleteTheorem` assms
     return $ Refine (\[t, t'] -> deductAntiSymmetric t t') [Open assmsL left, Open assmsR right]
 
   deductAntiSymmetricTac :: Tactic

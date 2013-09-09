@@ -1,3 +1,5 @@
+{-# LANGUAGE DoAndIfThenElse #-}
+
 module Mosquito.Theories.Bool where
 
   import Prelude hiding (fail)
@@ -33,10 +35,10 @@ module Mosquito.Theories.Bool where
   quantifierType = mkFunctionType (mkFunctionType alphaType boolType) boolType
 
   constantOfDecl :: Inference (Term, a) -> Inference Term
-  constantOfDecl decl = decl >>= \decl -> return . fst $ decl
+  constantOfDecl = liftM fst
 
   theoremOfDecl :: Inference (a, Theorem) -> Inference Theorem
-  theoremOfDecl decl = decl >>= \decl -> return . snd $ decl
+  theoremOfDecl = liftM snd
 
   --
   -- * Logic!
@@ -60,8 +62,8 @@ module Mosquito.Theories.Bool where
   trueD = theoremOfDecl trueDecl
 
   -- |Produces a derivation of @{} ⊢ true@.
-  trueI :: Inference Theorem
-  trueI = do
+  -- trueI :: Inference Theorem
+  trueI = Mosquito.Utility.Pretty.putStrLn $ do
     let a =  mkVar "a" boolType
     let t =  mkLam "a" boolType a
     eq    <- mkEquality t t
@@ -71,12 +73,13 @@ module Mosquito.Theories.Bool where
     conj  <-
       by [
         equalityModusPonensTac eq
-      , selectITac (== 1) `preceeding` reflexivityTac
+      , simpleReflexivityTac
       , selectITac (== 0) `preceeding` symmetryTac
       , selectITac (== 0) `preceeding` solveTac trueD
       ] conj
-    qed conj
+    return conj
 
+{-
   trueIPreTac :: PreTactic
   trueIPreTac assms concl = do
     trueC <- trueC
@@ -96,21 +99,41 @@ module Mosquito.Theories.Bool where
   trueEqE theorem = do
     trueI <- trueI
     symm  <- symmetry theorem
-    equalityModusPonens theorem trueI
+    equalityModusPonens symm trueI
+
+  trueEqEPreTac :: PreTactic
+  trueEqEPreTac assms concl = do
+    trueC <- trueC
+    eq <- mkEquality concl trueC
+    return $ Refine (\[t] -> trueEqE t) [Open assms eq]
+
+  trueEqETac :: Tactic
+  trueEqETac = apply trueEqEPreTac
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
   trueEqI :: Theorem -> Inference Theorem
   trueEqI theorem = do
-    let p = conclusion theorem
-    assmP <- assume p  -- p |- p
-    trueI <- trueI     -- |- true
-    das1  <- deductAntiSymmetric assmP trueI -- p |- p = true
-    let c = conclusion das1
-    assmC <- assume c -- p = true |- p = true
-    eqE   <- trueEqE assmC -- p = true |- p
+    let p =  conclusion theorem
+    assmP <- assume p  -- p ⊢ p
+    trueI <- trueI     -- {} ⊢ true
+    das1  <- deductAntiSymmetric assmP trueI -- p ⊢ p = true
+    let c =  conclusion das1
+    assmC <- assume c -- p = true ⊢ p = true
+    eqE   <- trueEqE assmC -- p = true ⊢ p
     deductAntiSymmetric das1 eqE
 
+  trueEqIPreTac :: PreTactic
+  trueEqIPreTac assms concl = do
+    trueC <- trueC
+    (left, right) <- fromEquality concl
+    if right == trueC then do
+      return $ Refine (\[t] -> trueEqI t) [Open assms left]
+    else
+      fail "`trueEqITac'"
+
+  trueEqITac :: Tactic
+  trueEqITac = apply trueEqIPreTac
 
   --
   -- ** Universal quantification
@@ -139,6 +162,7 @@ module Mosquito.Theories.Bool where
     let lam  =  mkLam name ty body
     mkApp inst lam
 
+{-
   reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
@@ -158,10 +182,11 @@ module Mosquito.Theories.Bool where
       , selectITac (== 1) `preceeding` abstractTac
       , selectITac (== 0) `preceeding` symmetryTac
       , selectITac (== 0) `preceeding` betaTac
-      , selectITac (== 0) `preceeding` solveTac trueEqI
+      , selectITac (== 0) `preceeding` trueEqITac
+      , selectITac (== 0) `preceeding` baseAuto
       ] prf
-    return prf
-
+    qed prf
+-}
   --
   -- ** Logical falsity
   --
@@ -184,7 +209,6 @@ module Mosquito.Theories.Bool where
   --
   -- ** Conjunction
   --
-
   conjunctionDecl :: Inference (Term, Theorem)
   conjunctionDecl = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "_∧_"
@@ -291,3 +315,4 @@ module Mosquito.Theories.Bool where
     disjunctionC <- disjunctionC
     pre          <- mkApp disjunctionC left
     mkApp pre right
+-}
