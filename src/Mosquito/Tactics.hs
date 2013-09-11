@@ -41,6 +41,14 @@ module Mosquito.Tactics where
     state' <- x state
     by xs state'
 
+  select :: Int -> Tactic -> Tactic
+  select i tac = selectITac (== i) `preceeding` tac
+
+  allEqualities :: PreTactic -> Tactic
+  allEqualities tac =
+    selectPTac (\assms concl -> isEquality concl) `preceeding`
+      apply tac
+
   --
   -- * Tactics
   --
@@ -69,8 +77,24 @@ module Mosquito.Tactics where
   -- ** Reflexivity
   --
 
-  simpleReflexivityPreTac :: PreTactic
-  simpleReflexivityPreTac assms concl = do
+  alphaPreTac :: PreTactic
+  alphaPreTac assms concl = do
+    (left, right) <- fromEquality concl
+    if left == right then do
+      theorem <- alpha left right
+      return $ Refine (\[] -> return theorem) []
+    else
+      fail . unwords $ [
+        "Terms passed to `alphaPreTac' are not alpha-equivalent."
+      , unwords ["Was expecting `", pretty left, "' to be"]
+      , unwords ["equivalent to `", pretty right, "'."]
+      ]
+
+  alphaTac :: Tactic
+  alphaTac = allEqualities alphaPreTac
+
+  reflexivityPreTac :: PreTactic
+  reflexivityPreTac assms concl = do
     eq <- fromEquality concl
     let (left, right) = (mkStructuralEquality *** mkStructuralEquality) eq
     if left == right then do
@@ -78,30 +102,13 @@ module Mosquito.Tactics where
       return $ Refine (\[] -> return theorem) []
     else
       fail . unwords $ [
-        "Terms passed to `simpleReflexivityPreTac' are not structurally"
+        "Terms passed to `reflexivityPreTac' are not structurally"
       , unwords ["equivalent.  Was expecting `", pretty . fst $ eq, "' to"]
       , unwords ["be structurally equivalent to `", pretty . snd $ eq, "'."]
       ]
 
-  simpleReflexivityTac :: Tactic
-  simpleReflexivityTac =
-      selectCandidates `preceeding` apply simpleReflexivityPreTac
-    where
-      selectCandidates :: Tactic
-      selectCandidates =
-        selectPTac (\assms concl -> isEquality concl)
-
-  reflexivityPreTac :: PreTactic
-  reflexivityPreTac assms concl = do
-    (left, right) <- fromEquality concl
-    if left == right then do
-      theorem <- reflexivity left
-      return $ Refine (\[] -> return theorem) []
-    else
-      fail "reflexivityTac"
-
   reflexivityTac :: Tactic
-  reflexivityTac = apply reflexivityPreTac
+  reflexivityTac = allEqualities reflexivityPreTac
 
   --
   -- ** Symmetry
@@ -219,9 +226,8 @@ module Mosquito.Tactics where
   performBetaRedex t = do
     (left, right) <- fromApp t
     (name, ty, body) <- fromLam left
-    let subst  = mkSubstitution name right
-    let result = termSubst subst body
-    return result
+    body <- termSubst name right body
+    return body
 
   reductionPreTac :: PreTactic
   reductionPreTac assms concl = do
@@ -235,12 +241,19 @@ module Mosquito.Tactics where
     , try betaTac
     ]
 
-  etaTac :: PreTactic
-  etaTac assms concl = do
+  --
+  -- ** Eta equivalence
+  --
+
+  etaPreTac :: PreTactic
+  etaPreTac assms concl = do
     (left, right) <- fromEquality concl
     --- XXX: test here
     thm <- eta left
     return $ Refine (\[] -> return thm) []
+
+  etaTac :: Tactic
+  etaTac = apply etaPreTac
 
   --
   -- ** Unfolding definitions
@@ -265,6 +278,6 @@ module Mosquito.Tactics where
 
   baseAuto :: Tactic
   baseAuto =
-    reflexivityTac <|>
-    apply etaTac <|>
+    alphaTac <|>
+    etaTac <|>
     betaTac 

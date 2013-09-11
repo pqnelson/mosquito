@@ -1,5 +1,3 @@
-{-# LANGUAGE DoAndIfThenElse #-}
-
 -- |The Mosquito kernel, defining types, terms, theorems, and providing primitive
 --  inference rules upon which everything else is built, along with simple mechanisms
 --  for extending the Mosquito logic (e.g. declaring axioms, defining new types and
@@ -44,18 +42,15 @@ module Mosquito.Kernel.Term (
   -- ** Type checking
   typeOf,
   -- ** Alpha-equivalence and free variables
-  fv, fvs, swap,
+  fv, fvs, permute,
   -- ** Structural equality
   StructuralEquality, mkStructuralEquality,
   -- ** Equality within the logic
   equality, isEquality, fromEquality, mkEquality,
-  -- * Substitutions
-  Substitution,
-  identity, mkSubstitution, compose,
   -- ** Type substitutions
-  TypeSubstitution, typeSubst,
+  typeSubst,
   -- ** Term substitutions
-  TermSubstitution, termSubst, termTypeSubst,
+  termSubst, termTypeSubst,
   -- * HOL theorems
   Provenance,
   track,
@@ -63,7 +58,7 @@ module Mosquito.Kernel.Term (
   hypotheses, conclusion, provenance,
   union, delete, deleteTheorem,
   -- ** Basic HOL theorems
-  reflexivity, symmetry, transitivity, abstract, combine, eta, beta,
+  alpha, symmetry, transitivity, abstract, combine, eta, beta,
   assume, equalityModusPonens, deductAntiSymmetric,
   typeInstantiation, instantiation,
   -- * Extending the logic
@@ -496,18 +491,16 @@ where
   mkEquality l r = do
     typeOfL <- typeOf l
     typeOfR <- typeOf r
-    let subst = mkSubstitution "α" typeOfL
-    if typeOfL == typeOfR
-      then do
-        left <- mkApp (termTypeSubst subst equality) l
-        mkApp left r
-      else
-        fail . unwords $ [
-          "Types of the left and right hand sides of the proposed equality do",
-          "not match, in a call to `mkEquality'.  Specifically, left hand side",
-          "has type `" ++ pretty typeOfL ++ "' whilst right hand side has type",
-          "`" ++ pretty typeOfR ++ "'."
-        ]
+    if typeOfL == typeOfR then do
+      left <- mkApp (termTypeSubst "α" typeOfL equality) l
+      mkApp left r
+    else
+      fail . unwords $ [
+        "Types of the left and right hand sides of the proposed equality do",
+        "not match, in a call to `mkEquality'.  Specifically, left hand side",
+        "has type `" ++ pretty typeOfL ++ "' whilst right hand side has type",
+        "`" ++ pretty typeOfR ++ "'."
+      ]
 
   fromEquality :: Term -> Inference (Term, Term)
   fromEquality t@(App (App (Const d) c) r)
@@ -543,106 +536,62 @@ where
   -- * Substitutions and utility functions
   --
 
-  newtype Substitution a = Substitution [(String, a)]
-
-  identity :: Substitution a
-  identity = Substitution []
-
-  mkSubstitution :: String -> a -> Substitution a
-  mkSubstitution dom rng = Substitution [(dom, rng)]
-
-  compose :: Substitution a -> Substitution a -> Substitution a
-  compose (Substitution theta) (Substitution theta') = Substitution $ theta ++ theta'
-
-  --
-  -- ** Pretty printings substitutions
-  --
-
-  instance Pretty a => Pretty (Substitution a) where
-    pretty (Substitution []) = "id"
-    pretty (Substitution ss) = "[" ++ body ++ "]"
-      where
-        body :: String
-        body = L.intercalate ", " $ map (\(d, r) -> d ++ " := " ++ pretty r) ss
-
-  --
-  -- ** Type substitutions
-  --
-
-  type TypeSubstitution = Substitution Type
-
-  typeSubst :: TypeSubstitution -> Type -> Type
-  typeSubst (Substitution theta) (TyVar v) = theta `at` v
-    where
-      at :: [(String, Type)] -> String -> Type
-      at []          v = TyVar v
-      at ((d, r):xs) v
-        | d == v    = r
-        | otherwise = at xs v
-  typeSubst theta (TyOperator descr args) = TyOperator descr $ map (typeSubst theta) args
-
-  --
-  -- ** Term substitutions
-  --
-
-  type TermSubstitution = Substitution Term
-
-  termSubst' :: Term -> String -> Term -> Term
-  termSubst' (Var v ty) dom rng
+  -- |Perform a type substitution replacing type variables whose names match
+  --  the first argument with the second argument.
+  typeSubst :: String -> Type -> Type -> Type
+  typeSubst dom rng (TyVar v)
     | dom == v  = rng
-    | otherwise = Var v ty
-  termSubst' c@Const{} dom rng = c
-  termSubst' (App l r) dom rng = App (termSubst' l dom rng) (termSubst' r dom rng)
-  termSubst' (Lam a ty bdy) dom rng
-    | a == dom || a `S.member` fv rng =
-      let seen = S.unions [unqualifiedNamesOfTerm bdy, unqualifiedNamesOfTerm rng, S.singleton dom] in
-      let fresh = qualifiedNameHead $ freshQualifiedName [] (Just a) seen in
-        Lam fresh ty (termSubst' (swap a fresh bdy) dom rng)
-    | otherwise = Lam a ty (termSubst' bdy dom rng)
+    | otherwise = TyVar v
+  typeSubst dom rng (TyOperator descr args) =
+    TyOperator descr . map (typeSubst dom rng) $ args
 
-  termSubst :: TermSubstitution -> Term -> Term
-  termSubst (Substitution [])          t = t
-  termSubst (Substitution ((d, r):xs)) t = termSubst (Substitution xs) (termSubst' t d r)
-
-  termTypeSubst :: TypeSubstitution -> Term -> Term
-  termTypeSubst theta (Var v ty)    = Var v $ typeSubst theta ty
-  termTypeSubst theta (Const descr) = Const $ go descr
+  -- |Performs a type substitution on all types decorating the term (at lambda
+  --  binding sites, within constant declarations and on decorating types
+  --  appearing on variables).
+  termTypeSubst :: String -> Type -> Term -> Term
+  termTypeSubst dom rng (Var v ty) = Var v $ typeSubst dom rng ty
+  termTypeSubst dom rng (Const c)  = Const . go $ c
     where
       go :: ConstantDescription -> ConstantDescription
-      go (PrimitiveConstant n ty) = PrimitiveConstant n (typeSubst theta ty)
-      go (DefinedConstant n ty d) = DefinedConstant n (typeSubst theta ty) d
-  termTypeSubst theta (App l r)      = App (termTypeSubst theta l) (termTypeSubst theta r)
-  termTypeSubst theta (Lam a ty bdy) = Lam a (typeSubst theta ty) $ termTypeSubst theta bdy
+      go (PrimitiveConstant n ty) = PrimitiveConstant n $ typeSubst dom rng ty
+      go (DefinedConstant n ty d) = DefinedConstant n (typeSubst dom rng ty) d
+  termTypeSubst dom rng (App l r)  =
+    App (termTypeSubst dom rng l) $ termTypeSubst dom rng r
+  termTypeSubst dom rng (Lam a ty body) =
+    Lam a (typeSubst dom rng ty) $ termTypeSubst dom rng body
+
+  -- |Performs a term substitution.  This function does **not** perform any
+  --  renaming of bound variables.  Should bound variables be not sufficiently
+  --  fresh, the function will return @Fail@.  You must rename to something
+  --  sufficiently fresh prior to using this function (i.e. by using @swap@.)
+  termSubst :: String -> Term -> Term -> Inference Term
+  termSubst dom rng (Var v ty)
+    | dom == v  = return rng
+    | otherwise = return $ Var v ty
+  termSubst dom rng (Const c) = return . Const $ c
+  termSubst dom rng (App l r) = do
+    l <- termSubst dom rng l
+    r <- termSubst dom rng r
+    return $ App l r
+  termSubst dom rng (Lam a ty body)
+    | a == dom =
+      fail . unwords $ [
+        "Bound variable and domain of substitution clash in"
+      , "`termSubst'."
+      ]
+    | a `S.member` fv rng =
+      fail . unwords $ [
+        "Bound variable in free variables of range of substitution"
+      , "in `termSubst'."
+      ]
+    | otherwise = do
+      body <- termSubst dom rng body
+      return $ Lam a ty body
+
 
   --
   -- ** Alpha-equivalence on terms.
   --
-
-  unqualifiedNamesOfConstantDescription :: ConstantDescription -> S.Set String
-  unqualifiedNamesOfConstantDescription = S.singleton . qualifiedNameHead . constantDescriptionQualifiedName
-
-  unqualifiedNamesOfTypeOperatorDescription :: TypeOperatorDescription -> S.Set String
-  unqualifiedNamesOfTypeOperatorDescription = S.singleton . qualifiedNameHead . typeOperatorDescriptionQualifiedName
-
-  unqualifiedNamesOfType :: Type -> S.Set String
-  unqualifiedNamesOfType (TyVar v)               = S.singleton v
-  unqualifiedNamesOfType (TyOperator descr args) =
-    unqualifiedNamesOfTypeOperatorDescription descr `S.union`
-      L.foldr S.union S.empty (map unqualifiedNamesOfType args)
-
-  unqualifiedNamesOfTerm :: Term -> S.Set String
-  unqualifiedNamesOfTerm (Var a ty) =
-    S.singleton a `S.union` unqualifiedNamesOfType ty
-  unqualifiedNamesOfTerm (Const descr) =
-    unqualifiedNamesOfConstantDescription descr
-  unqualifiedNamesOfTerm (App l r) =
-    unqualifiedNamesOfTerm l `S.union` unqualifiedNamesOfTerm r
-  unqualifiedNamesOfTerm (Lam a ty bdy) =
-    S.unions [
-      S.singleton a,
-      unqualifiedNamesOfType ty,
-      unqualifiedNamesOfTerm bdy
-    ]
 
   -- |Collects the free variables (i.e. variables appearing within a
   --  term not bound by a lambda-abstraction) into a Set.
@@ -668,17 +617,17 @@ where
 
   -- |Performs a swapping of names within terms.  Used to define
   --  alpha-equivalence later.
-  swap :: String -> String -> Term -> Term
-  swap a b (Var c ty)
+  permute :: String -> String -> Term -> Term
+  permute a b (Var c ty)
     | a == c    = Var b ty
     | b == c    = Var a ty
     | otherwise = Var c ty
-  swap a b (Const d) = Const d
-  swap a b (App l r) = App (swap a b l) $ swap a b r
-  swap a b (Lam c ty body)
-    | a == c    = Lam b ty $ swap a b body
-    | b == c    = Lam a ty $ swap a b body
-    | otherwise = Lam c ty $ swap a b body
+  permute a b (Const d) = Const d
+  permute a b (App l r) = App (permute a b l) $ permute a b r
+  permute a b (Lam c ty body)
+    | a == c    = Lam b ty $ permute a b body
+    | b == c    = Lam a ty $ permute a b body
+    | otherwise = Lam c ty $ permute a b body
 
   instance Eq Term where
     (Var a ty)     == (Var b ty')      = a == b && ty == ty'
@@ -687,10 +636,10 @@ where
     (Lam a ty bdy) == (Lam b ty' bdy')
       | a == b    = ty == ty' && bdy == bdy'
       | otherwise =
-          if a `S.member` fv bdy' then
-            False
-          else
-            bdy == swap a b bdy' && ty == ty'
+        if a `S.member` fv bdy' then
+          False
+        else
+          bdy == permute a b bdy' && ty == ty'
     _ == _ = False
 
   -- |Structural equality wrapper for terms so that we have both alpha-equivalence
@@ -827,11 +776,19 @@ where
   -- ** The basic HOL theorems
   --
 
-  -- |Produces a derivation of @{} ⊢ t = t@ given a well-typed term @t@.
-  reflexivity :: Term -> Inference Theorem
-  reflexivity t = do
-    eq <- mkEquality t t
-    return $ Theorem DerivedSafely ([], eq)
+  -- |Produces a derivation of @{} ⊢ t = t'@ given two terms @t@ and @t'@
+  --  that are alpha-equivalent.
+  alpha :: Term -> Term -> Inference Theorem
+  alpha t u =
+    if t == u then do
+      eq     <- mkEquality t u
+      return $  Theorem DerivedSafely ([], eq)
+    else
+      fail . unwords $ [
+        "Input terms to `reflexivity' are not alpha-equivalent."
+      , unwords ["Was expecting `", pretty t, "' to be alpha-equivalent"]
+      , unwords ["with `", pretty u, "'."]
+      ]
 
   -- |Produces a derivation of @Gamma ⊢ s = t@ given a derivation of
   --  @Gamma ⊢ t = s@.  Note, not strictly necessary to have this in
@@ -848,27 +805,28 @@ where
   transitivity (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     (left, right)   <- fromEquality concl
     (left', right') <- fromEquality concl'
-    if right == left'
-      then do
-        eq              <- mkEquality left right'
-        return $ Theorem (p `track` q) (hyps `union` hyps', eq)
-      else
-        fail . unwords $ [
-          "The two derivations supplied to `transitivity' are not valid",
-          "arguments as terms are not alpha-equivalent.  Was expecting",
-          "term `" ++ pretty right ++ "' to be alpha-equivalent with",
-          "term `" ++ pretty left' ++ "'."
-        ]
+    if mkStructuralEquality right == mkStructuralEquality left' then do
+      eq              <- mkEquality left right'
+      return $ Theorem (p `track` q) (hyps `union` hyps', eq)
+    else
+      fail . unwords $ [
+        "The two derivations supplied to `transitivity' are not valid",
+        "arguments as terms are not structurally equivalent.  Was expecting",
+        "term `" ++ pretty right ++ "' to be structurally-equivalent with",
+        "term `" ++ pretty left' ++ "'."
+      ]
 
   -- |Produces a derivation @{p} ⊢ p@ for @p@ a term of type @Bool@.
   assume :: Term -> Inference Theorem
   assume t = do
     typeOfT <- typeOf t
-    if typeOfT == boolType
-      then
-        return $ Theorem DerivedSafely ([t], t)
-      else
-        fail $ "Term given to `assume' is not a formula, but has type `" ++ pretty typeOfT ++ "'."
+    if typeOfT == boolType then
+      return $ Theorem DerivedSafely ([t], t)
+    else
+      fail . unwords $ [
+        "Term given to `assume' is not a formula, but has type"
+      , unwords ["`", pretty typeOfT, "'."]
+      ]
 
   -- |Produces a derivation of @(Gamma - q) u (Delta - p) ⊢ p = q@ from a pair of
   --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
@@ -882,16 +840,15 @@ where
   -- of the form @Gamma ⊢ t = u@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
   abstract name ty (Theorem p (hyps, concl)) = do
-    if not $ name `S.member` fvs hyps
-      then do
-        (left, right) <- fromEquality concl
-        eq            <- mkEquality (mkLam name ty left) (mkLam name ty right)
-        return $ Theorem p (hyps, eq)
-      else
-        fail . unwords $ [
-          "Supplied name for lambda-abstraction to `abstract' appears free",
-          "in hypotheses of supplied theorem: `" ++ name ++ "'."
-        ]
+    if not $ name `S.member` fvs hyps then do
+      (left, right) <- fromEquality concl
+      eq            <- mkEquality (mkLam name ty left) (mkLam name ty right)
+      return $ Theorem p (hyps, eq)
+    else
+      fail . unwords $ [
+        "Supplied name for lambda-abstraction to `abstract' appears free",
+        "in hypotheses of supplied theorem: `" ++ name ++ "'."
+      ]
 
   -- |Produces a derivation of @Gamma u Delta ⊢ q@ given two derivations of
   --  @Gamma ⊢ p = q@ and @Delta ⊢ p@ respectively.
@@ -925,11 +882,9 @@ where
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
-      eq <- mkEquality t $ termSubst subst body
-      return $ Theorem DerivedSafely ([], eq)
-    where
-      subst :: Substitution Term
-      subst = mkSubstitution name b
+    body <- termSubst name b body
+    eq   <- mkEquality t body
+    return $ Theorem DerivedSafely ([], eq)
   beta t =
     fail . unwords $ [
       "Cannot apply `beta' as term passed to function is not a valid",
@@ -942,31 +897,35 @@ where
   --  axiom later.
   eta :: Term -> Inference Theorem
   eta t@(Lam name _ (App left (Var v _)))
-    | v == name = do
-        if not $ v `S.member` fv left
-          then do
-            eq <- mkEquality t left
-            return $ Theorem DerivedSafely ([], eq)
-          else
-            fail . unwords $ [
-              "Cannot apply `eta' as variable " ++ name ++ "appears free ",
-              "in body of lambda abstraction " ++ pretty left ++ "."
-            ]
+    | v == name =
+        if not $ v `S.member` fv left then do
+          eq <- mkEquality t left
+          return $ Theorem DerivedSafely ([], eq)
+        else
+          fail . unwords $ [
+            unwords ["Cannot apply `eta' as variable `", name, "' appears free"]
+          , unwords ["in body of lambda abstraction `", pretty left, "'."]
+          ]
     | otherwise =
-        fail $ "Input term is not of correct shape to apply `eta': `" ++ pretty t ++ "'."
+        fail . unwords $ [
+          "Input term is not of correct shape to apply `eta':"
+        , unwords ["`", pretty t, "'."]
+        ]
   eta t =
     fail . unwords $ [
-      "Cannot apply `eta' as term passed to function is not a valid",
-      "eta-redex, in term: `" ++ pretty t ++ "'."
+      "Cannot apply `eta' as term passed to function is not a valid"
+    , unwords ["eta-redex, in term: `", pretty t, "'."]
     ]
 
-  typeInstantiation :: Substitution Type -> Theorem -> Inference Theorem
-  typeInstantiation theta (Theorem p (hyps, concl)) = do
-    return $ Theorem p (map (termTypeSubst theta) hyps, termTypeSubst theta concl)
+  typeInstantiation :: String -> Type -> Theorem -> Inference Theorem
+  typeInstantiation dom rng (Theorem p (hyps, concl)) = do
+    return $ Theorem p (map (termTypeSubst dom rng) hyps, termTypeSubst dom rng concl)
 
-  instantiation :: Substitution Term -> Theorem -> Inference Theorem
-  instantiation theta (Theorem p (hyps, concl)) = do
-    return $ Theorem p (map (termSubst theta) hyps, termSubst theta concl)
+  instantiation :: String -> Term -> Theorem -> Inference Theorem
+  instantiation dom rng (Theorem p (hyps, concl)) = do
+    hyps  <- mapM (termSubst dom rng) hyps
+    concl <- termSubst dom rng concl
+    return $ Theorem p (hyps, concl)
 
   --
   -- * Extending the logic
@@ -974,24 +933,22 @@ where
 
   primitiveNewDefinedConstant :: QualifiedName -> Term -> Type -> Inference (Term, Theorem)
   primitiveNewDefinedConstant name t typ =
-    if fv t == S.empty
-      then
-        if typeVars t `S.isSubsetOf` ftv typ
-          then do
-            let const = mkConst $ DefinedConstant name typ t
-            eq <- mkEquality const t
-            return (const, Theorem DerivedSafely ([], eq))
-          else
-            fail . unwords $ [
-              "Free type variables of definiens supplied to `primitiveNewDefinedConstant'",
-              "is not a subset of the free type variables of the type of the",
-              "left hand side, in term: `" ++ pretty t ++ "'."
-            ]
+    if fv t == S.empty then
+      if typeVars t `S.isSubsetOf` ftv typ then do
+        let const = mkConst $ DefinedConstant name typ t
+        eq <- mkEquality const t
+        return (const, Theorem DerivedSafely ([], eq))
       else
         fail . unwords $ [
-          "Definiens supplied to `primitiveNewDefinedConstant' has free variables, in",
-          "term: `" ++ pretty t ++ "'."
+          "Free type variables of definiens supplied to `primitiveNewDefinedConstant'",
+          "is not a subset of the free type variables of the type of the",
+          "left hand side, in term: `" ++ pretty t ++ "'."
         ]
+    else
+      fail . unwords $ [
+        "Definiens supplied to `primitiveNewDefinedConstant' has free variables, in",
+        "term: `" ++ pretty t ++ "'."
+      ]
 
   primitiveNewAxiom :: Term -> Inference Theorem
   primitiveNewAxiom term = do
@@ -1000,6 +957,6 @@ where
       return $ Theorem FromAxiom ([], term)
     else
       fail . unwords $ [
-        "Term `" ++ pretty term ++ "' passed to `newAxiom' is not",
-        "a proposition, instead having type `" ++ pretty typeOfTerm ++ "'."
+        unwords ["Term `", pretty term, "' passed to `newAxiom' is not"]
+      , unwords ["a proposition, instead having type `", pretty typeOfTerm, "'."]
       ]

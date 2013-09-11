@@ -9,6 +9,7 @@ module Mosquito.Theories.Bool where
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
 
+  import Mosquito.Parsing
   import Mosquito.ProofState
   import Mosquito.Tactics
   import Mosquito.Theory
@@ -29,7 +30,9 @@ module Mosquito.Theories.Bool where
   thd3 (x, y, z) = z
 
   binaryConnectiveType :: Type
-  binaryConnectiveType = mkFunctionType boolType (mkFunctionType boolType boolType)
+  binaryConnectiveType =
+    let Success t = runParser (parseType kernelTypeParsingInfo) "_→_ Bool (_→_ Bool Bool)" in
+      t
 
   quantifierType :: Type
   quantifierType = mkFunctionType (mkFunctionType alphaType boolType) boolType
@@ -62,8 +65,8 @@ module Mosquito.Theories.Bool where
   trueD = theoremOfDecl trueDecl
 
   -- |Produces a derivation of @{} ⊢ true@.
-  -- trueI :: Inference Theorem
-  trueI = Mosquito.Utility.Pretty.putStrLn $ do
+  trueI :: Inference Theorem
+  trueI = do
     let a =  mkVar "a" boolType
     let t =  mkLam "a" boolType a
     eq    <- mkEquality t t
@@ -73,13 +76,12 @@ module Mosquito.Theories.Bool where
     conj  <-
       by [
         equalityModusPonensTac eq
-      , simpleReflexivityTac
-      , selectITac (== 0) `preceeding` symmetryTac
-      , selectITac (== 0) `preceeding` solveTac trueD
+      , alphaTac
+      , select 0 symmetryTac
+      , select 0 $ solveTac trueD
       ] conj
-    return conj
+    qed conj
 
-{-
   trueIPreTac :: PreTactic
   trueIPreTac assms concl = do
     trueC <- trueC
@@ -90,8 +92,13 @@ module Mosquito.Theories.Bool where
         "Conclusion passed to `trueITac' not `true'."
       ]
 
+  -- |Solves all goals of the form @true@.
   trueITac :: Tactic
-  trueITac = apply trueIPreTac
+  trueITac = 
+    selectPTac (\assms concl ->
+      case trueC of
+        Fail{} -> False
+        Success c -> concl == c) `preceeding` apply trueIPreTac
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma ⊢ p = true@.
@@ -109,6 +116,8 @@ module Mosquito.Theories.Bool where
 
   trueEqETac :: Tactic
   trueEqETac = apply trueEqEPreTac
+
+{-
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.

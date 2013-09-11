@@ -1,0 +1,195 @@
+\documentclass{llncs}
+
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{listings}
+\usepackage{microtype}
+\usepackage{prooftree}
+
+\author{Dominic P. Mulligan}
+\title{Mosquito}
+\subtitle{An implementation of higher-order logic}
+\titlerunning{Mosquito}
+\institute{Computer Laboratory, University of Cambridge}
+
+\newcommand{\act}{\cdot}
+\newcommand{\deffont}[1]{\textbf{#1}}
+\newcommand{\ent}{\vdash}
+\newcommand{\lam}[1]{\lambda{#1}.}
+\newcommand{\rulefont}[1]{\ensuremath{(\textbf{#1})}}
+\newcommand{\tf}[1]{\mathsf{#1}}
+
+\definecolor{mygreen}{rgb}{0,0.6,0}
+\definecolor{mygray}{rgb}{0.5,0.5,0.5}
+\definecolor{mymauve}{rgb}{0.58,0,0.82}
+
+\lstset{ %
+  backgroundcolor=\color{white},   % choose the background color; you must add \usepackage{color} or \usepackage{xcolor}
+  basicstyle=\scriptsize\tt,        % the size of the fonts that are used for the code
+  breakatwhitespace=false,         % sets if automatic breaks should only happen at whitespace
+  breaklines=true,                 % sets automatic line breaking
+  captionpos=b,                    % sets the caption-position to bottom
+  commentstyle=\color{mygreen},    % comment style
+  %deletekeywords={...},            % if you want to delete keywords from the given language
+  %escapeinside={\%*}{*)},          % if you want to add LaTeX within your code
+  extendedchars=true,              % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
+  %frame=single,                    % adds a frame around the code
+  keepspaces=true,                 % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
+  keywordstyle=\color{blue},       % keyword style
+  language=haskell,                 % the language of the code
+  %morekeywords={*,...},            % if you want to add more keywords to the set
+  %numbers=left,                    % where to put the line-numbers; possible values are (none, left, right)
+  %numbersep=5pt,                   % how far the line-numbers are from the code
+  %numberstyle=\tiny\color{mygray}, % the style that is used for the line-numbers
+  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  showspaces=false,                % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
+  showstringspaces=false,          % underline spaces within strings only
+  showtabs=false,                  % show tabs within strings adding particular underscores
+  %stepnumber=2,                    % the step between two line-numbers. If it's 1, each line will be numbered
+  stringstyle=\color{mymauve},     % string literal style
+  tabsize=2,                       % sets default tabsize to 2 spaces
+  title=\lstname                   % show the filename of files included with \lstinputlisting; also try caption instead of title
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\end{abstract}
+
+\section{Introduction}
+\label{sect.introduction}
+
+\subsection{The problem with state}
+\label{subsect.problem.with.state}
+
+\section{Mosquito's logic}
+\label{sect.mosquito.logic}
+
+Mosquito implements a polymorphically typed higher-order logic similar in style and substance to the implemented logics of existing `HOLs' such as HOL-4, HOL-Light and Isabelle/HOL.
+
+HOL types consist of type variables (we use Greek lowercase letters to range over type variables) and type operators applied to a list of types of length matching their declared arity.
+The Mosquito logic is equipped with two primitive type operators, the type of propositions $\mathtt{Bool}$ of arity zero, and the function space $\phi \rightarrow \psi$ of arity two (we take the liberty of writing the function space arrow infix here and throughout the sequel).
+New type operators may be introduced via a single function exposed in the kernel to maintain consistency.
+
+Terms
+
+\begin{definition}
+\label{defn.finite.support}
+Assume $f$ is an automorphism on $\mathbb{V}$.
+Define the set:
+\begin{displaymath}
+fixed_f = \{ a \in \mathbb{V} \mid f(a) = a \}
+\end{displaymath}
+Call a function $f$ \deffont{finitely supported} when $fixed_f$ is finite.
+\end{definition}
+
+\begin{definition}
+\label{defn.swapping.action}
+Define \deffont{permutations} as finitely supported bijections on variables.
+We use $\pi, \pi', \pi''$ and so on to range over permutations.
+Extend this definition to a \deffont{swapping action} on terms by the following rules:
+\begin{gather*}
+\pi \act a \equiv \pi(a) \quad \pi \act \tf{C} \equiv \tf{C} \quad \pi \act rs \equiv (\pi \act r)(\pi \act s) \quad \pi \act \lam{a{:}\phi}r \equiv \lam{\pi(a){:}\phi}(\pi \act r)
+\end{gather*}
+\end{definition}
+
+\begin{figure}
+\begin{gather*}
+\begin{prooftree}
+(a, b \not\in fv(t))
+\justifies
+\{ \} \ent t = (a\ b) \act t
+\using\rulefont{swap}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u
+\justifies
+\Gamma \ent u = t
+\using\rulefont{sym}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u \quad \Gamma \ent u = v
+\justifies
+\Gamma \ent t = v
+\using\rulefont{trans}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \ent f = g \quad \Delta \ent t = u
+\justifies
+\Gamma \cup \Delta \ent f\ t = g\ u
+\using\rulefont{app}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u
+\justifies
+\Gamma \ent \lam{a{:}\phi}t = \lam{a{:}\phi}u
+\using\rulefont{lam}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+(type(t) : bool)
+\justifies
+\{ t \} \ent t
+\using\rulefont{assm}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u \quad \Delta \ent t
+\justifies
+\Gamma \cup \Delta \ent u
+\using\rulefont{eqmp}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t \quad \Delta \ent u
+\justifies
+(\Gamma - u) \cup (\Delta - t) \ent t = u
+\using\rulefont{asym}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \ent t
+\justifies
+\Gamma[\alpha_i := \phi_i] \ent t[\alpha_i := \phi_i]
+\using\rulefont{ty-inst}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t
+\justifies
+\Gamma[b_i := u_i] \ent t[b_i := u_i]
+\using\rulefont{trm-inst}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+(a \not\in fv(t))
+\justifies
+\{ \} \ent \lam{a{:}\phi}(t\ a) = t
+\using\rulefont{eta}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\phantom{h}
+\justifies
+\{ \} \ent (\lam{a{:}\phi}t)u = t[a := u]
+\using\rulefont{beta}
+\end{prooftree}
+\end{gather*}
+\caption{Derivation rules for Mosquito \textsc{hol}}
+\label{fig.derivable.equality}
+\end{figure}
+
+\section{Tactics}
+\label{sect.tactics}
+
+\section{Conclusions}
+\label{sect.conclusions}
+
+\end{document}

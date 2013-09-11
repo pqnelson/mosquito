@@ -1,3 +1,75 @@
+
+  newtype Substitution a = Substitution [(String, a)]
+
+  identity :: Substitution a
+  identity = Substitution []
+
+  mkSubstitution :: String -> a -> Substitution a
+  mkSubstitution dom rng = Substitution [(dom, rng)]
+
+  compose :: Substitution a -> Substitution a -> Substitution a
+  compose (Substitution theta) (Substitution theta') = Substitution $ theta ++ theta'
+
+  --
+  -- ** Pretty printings substitutions
+  --
+
+  instance Pretty a => Pretty (Substitution a) where
+    pretty (Substitution []) = "id"
+    pretty (Substitution ss) = "[" ++ body ++ "]"
+      where
+        body :: String
+        body = L.intercalate ", " $ map (\(d, r) -> d ++ " := " ++ pretty r) ss
+
+  --
+  -- ** Type substitutions
+  --
+
+  type TypeSubstitution = Substitution Type
+
+  typeSubst :: TypeSubstitution -> Type -> Type
+  typeSubst (Substitution theta) (TyVar v) = theta `at` v
+    where
+      at :: [(String, Type)] -> String -> Type
+      at []          v = TyVar v
+      at ((d, r):xs) v
+        | d == v    = r
+        | otherwise = at xs v
+  typeSubst theta (TyOperator descr args) = TyOperator descr $ map (typeSubst theta) args
+
+  --
+  -- ** Term substitutions
+  --
+
+  type TermSubstitution = Substitution Term
+
+  termSubst' :: Term -> String -> Term -> Term
+  termSubst' (Var v ty) dom rng
+    | dom == v  = rng
+    | otherwise = Var v ty
+  termSubst' c@Const{} dom rng = c
+  termSubst' (App l r) dom rng = App (termSubst' l dom rng) (termSubst' r dom rng)
+  termSubst' (Lam a ty bdy) dom rng
+    | a == dom || a `S.member` fv rng =
+      let seen = S.unions [unqualifiedNamesOfTerm bdy, unqualifiedNamesOfTerm rng, S.singleton dom] in
+      let fresh = qualifiedNameHead $ freshQualifiedName [] (Just a) seen in
+        Lam fresh ty (termSubst' (permute a fresh bdy) dom rng)
+    | otherwise = Lam a ty (termSubst' bdy dom rng)
+
+  termSubst :: TermSubstitution -> Term -> Term
+  termSubst (Substitution [])          t = t
+  termSubst (Substitution ((d, r):xs)) t = termSubst (Substitution xs) (termSubst' t d r)
+
+  termTypeSubst :: TypeSubstitution -> Term -> Term
+  termTypeSubst theta (Var v ty)    = Var v $ typeSubst theta ty
+  termTypeSubst theta (Const descr) = Const $ go descr
+    where
+      go :: ConstantDescription -> ConstantDescription
+      go (PrimitiveConstant n ty) = PrimitiveConstant n (typeSubst theta ty)
+      go (DefinedConstant n ty d) = DefinedConstant n (typeSubst theta ty) d
+  termTypeSubst theta (App l r)      = App (termTypeSubst theta l) (termTypeSubst theta r)
+  termTypeSubst theta (Lam a ty bdy) = Lam a (typeSubst theta ty) $ termTypeSubst theta bdy
+
 --
   -- * Development of HOL within Caracal.  Move elsewhere when we have a
   --   clear idea of what a theory is.
