@@ -204,6 +204,7 @@ where
         | otherwise        = Hole tag assms concl
       walk pred (Node j children) =
         Node j $ map (walk pred) children
+      walk pred (Leaf thm) = Leaf thm
 
   selectITac :: (Int -> Bool) -> Tactic
   selectITac pred state = return $ modify derivation (\d -> State.evalState (walk pred d) 0) state

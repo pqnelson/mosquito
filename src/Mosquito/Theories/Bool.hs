@@ -9,6 +9,7 @@ module Mosquito.Theories.Bool where
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
 
+  import Mosquito.DerivedRules
   import Mosquito.Parsing
   import Mosquito.ProofState
   import Mosquito.Tactics
@@ -89,16 +90,21 @@ module Mosquito.Theories.Bool where
       return $ Refine (\[] -> trueI) []
     else
       fail . unwords $ [
-        "Conclusion passed to `trueITac' not `true'."
+        "Conclusion passed to `trueIPreTac' not `true'."
       ]
 
   -- |Solves all goals of the form @true@.
   trueITac :: Tactic
-  trueITac = 
-    selectPTac (\assms concl ->
-      case trueC of
-        Fail{} -> False
-        Success c -> concl == c) `preceeding` apply trueIPreTac
+  trueITac = Mosquito.Tactics.all trueIPreTac
+
+  trueITacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    trueC <- trueC
+    prf   <- conjecture "trueITacTest" trueC
+    prf   <-
+      by [
+        trueITac
+      ] prf
+    qed prf
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma ⊢ p = true@.
@@ -117,7 +123,15 @@ module Mosquito.Theories.Bool where
   trueEqETac :: Tactic
   trueEqETac = apply trueEqEPreTac
 
-{-
+  trueEqETacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    trueC <- trueC
+    prf   <- conjecture "trueEqETacTest" trueC
+    prf   <-
+      by [
+        select 0 trueEqETac
+      , select 0 reflexivityTac
+      ] prf
+    qed prf
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
@@ -144,6 +158,17 @@ module Mosquito.Theories.Bool where
   trueEqITac :: Tactic
   trueEqITac = apply trueEqIPreTac
 
+  trueEqITacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    trueC <- trueC
+    conj  <- mkEquality trueC trueC
+    prf   <- conjecture "trueEqITacTest" conj
+    prf   <-
+      by [
+        select 0 trueEqITac
+      -- , select 0 trueITac
+      ] prf
+    return prf
+
   --
   -- ** Universal quantification
   --
@@ -167,11 +192,33 @@ module Mosquito.Theories.Bool where
   mkForall :: String -> Type -> Term -> Inference Term
   mkForall name ty body = do
     forallC  <- forallC
-    let inst =  termTypeSubst (mkSubstitution "α" ty) forallC
+    let inst =  termTypeSubst "α" ty forallC
     let lam  =  mkLam name ty body
     mkApp inst lam
 
-{-
+  baseAuto :: Tactic
+  baseAuto =
+    alphaTac <|>
+    etaTac <|>
+    betaTac <|>
+    trueITac
+
+  testThm = Mosquito.Utility.Pretty.putStrLn $ do
+    let t =  mkVar "t" boolType
+    trueC <- trueC
+    let l =  mkLam "t" boolType trueC
+    app   <- mkApp l t
+    -- conj  <- mkEquality app t
+    prf   <- conjecture "test" app
+    prf   <-
+      by [
+        select 0 reductionTac
+      , select 1 trueITac
+      , select 0 symmetryTac
+      , select 0 betaTac
+      ] prf
+    qed prf
+
   reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
@@ -182,20 +229,21 @@ module Mosquito.Theories.Bool where
     prf     <- conjecture "reflexivity-strong" conj
     prf     <-
       by [
-        selectITac (== 0) `preceeding` unfoldAppLTac forallD
-      , selectITac (== 0) `preceeding` symmetryTac
-      , selectITac (== 0) `preceeding` combineTac
-      , selectITac (== 1) `preceeding` baseAuto
-      , selectITac (== 0) `preceeding` solveTac forallD
-      , selectITac (== 0) `preceeding` reductionTac
-      , selectITac (== 1) `preceeding` abstractTac
-      , selectITac (== 0) `preceeding` symmetryTac
-      , selectITac (== 0) `preceeding` betaTac
-      , selectITac (== 0) `preceeding` trueEqITac
-      , selectITac (== 0) `preceeding` baseAuto
+        select 0 $ unfoldAppLTac forallD
+      , select 0 combineTac
+      , select 0 baseAuto
+      , select 0 symmetryTac
+      , select 0 $ solveTac forallD
+      , select 0 reductionTac
+      , select 1 abstractTac
+      , select 1 trueEqITac
+      , select 1 reflexivityTac
+      , select 0 symmetryTac
+      , select 0 betaTac
       ] prf
     qed prf
--}
+
+{-
   --
   -- ** Logical falsity
   --

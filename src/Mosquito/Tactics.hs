@@ -44,6 +44,9 @@ module Mosquito.Tactics where
   select :: Int -> Tactic -> Tactic
   select i tac = selectITac (== i) `preceeding` tac
 
+  all :: PreTactic -> Tactic
+  all tac = selectPTac (\assms concl -> True) `preceeding` apply tac
+
   allEqualities :: PreTactic -> Tactic
   allEqualities tac =
     selectPTac (\assms concl -> isEquality concl) `preceeding`
@@ -93,6 +96,19 @@ module Mosquito.Tactics where
   alphaTac :: Tactic
   alphaTac = allEqualities alphaPreTac
 
+  alphaTacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    let a =  mkVar "a" boolType
+    let b =  mkVar "b" boolType
+    let l =  mkLam "a" boolType a
+    let r =  mkLam "b" boolType b
+    conj  <- mkEquality l r
+    prf   <- conjecture "alphaTacTest" conj
+    prf   <-
+      by [
+        alphaTac
+      ] prf
+    qed prf
+
   reflexivityPreTac :: PreTactic
   reflexivityPreTac assms concl = do
     eq <- fromEquality concl
@@ -110,6 +126,17 @@ module Mosquito.Tactics where
   reflexivityTac :: Tactic
   reflexivityTac = allEqualities reflexivityPreTac
 
+  reflexivityTacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    let a = mkVar "a" boolType
+    let l = mkLam "a" boolType a
+    conj  <- mkEquality l l
+    prf   <- conjecture "reflexivityTacTest" conj
+    prf   <-
+      by [
+        reflexivityTac
+      ] prf
+    qed prf
+
   --
   -- ** Symmetry
   --
@@ -123,6 +150,20 @@ module Mosquito.Tactics where
   symmetryTac :: Tactic
   symmetryTac = apply symmetryPreTac
 
+  symmetryTacTest = Mosquito.Utility.Pretty.putStrLn $ do
+    let a    =  mkVar "a" boolType
+    let b    =  mkVar "b" boolType
+    let l    =  mkLam "a" boolType a
+    let r    =  mkLam "b" boolType b
+    conj     <- mkEquality l r
+    prf      <- conjecture "symmetryTacTest" conj
+    prf      <-
+      by [
+        symmetryTac
+      , select 0 alphaTac
+      ] prf
+    qed prf
+
   --
   -- ** Transitivity
   --
@@ -135,7 +176,7 @@ module Mosquito.Tactics where
     return $ Refine (\[t, t'] -> transitivity t t') [Open assms left, Open assms right]
 
   transitivityTac :: TermTactic
-  transitivityTac = apply . transitivityPreTac
+  transitivityTac = apply transitivityPreTac
 
   --
   -- ** Abstract
@@ -180,7 +221,21 @@ module Mosquito.Tactics where
       fail "`combineLTac'"
 
   combineLTac :: Tactic
-  combineLTac = apply combineLPreTac
+  combineLTac = allEqualities combineLPreTac
+
+  combineRPreTac :: PreTactic
+  combineRPreTac assms concl = do
+    (left, right)    <- fromEquality concl
+    (leftL, rightL)  <- fromApp left
+    (leftR, rightR) <- fromApp right
+    if rightL == rightR then do
+      eq <- mkEquality leftL leftR
+      return $ Refine (\[t] -> combineR rightL t) [Open assms eq]
+    else
+      fail "`combineTac"
+
+  combineRTac :: Tactic
+  combineRTac = allEqualities combinePreTac
 
   --
   -- ** Equality modus ponens
@@ -212,34 +267,33 @@ module Mosquito.Tactics where
   -- ** Beta equivalence
   --
 
+  betaReduce :: Term -> Inference Term
+  betaReduce t = do
+    (left, right) <- fromApp t
+    (n, ty, body) <- fromLam left
+    body          <- termSubst n right body
+    return body
+
   betaPreTac :: PreTactic
   betaPreTac assms concl = do
     (left, right) <- fromEquality concl
-    -- XXX: test here
-    thm <- beta left
-    return $ Refine (\[] -> return thm) []
+    reduced       <- betaReduce left
+    if reduced == right then do
+      thm <- beta left
+      return $ Refine (\[] -> return thm) []
+    else
+      fail "`betaPreTac'"
 
   betaTac :: Tactic
-  betaTac = apply betaPreTac
-
-  performBetaRedex :: Term -> Inference Term
-  performBetaRedex t = do
-    (left, right) <- fromApp t
-    (name, ty, body) <- fromLam left
-    body <- termSubst name right body
-    return body
+  betaTac = allEqualities betaPreTac
 
   reductionPreTac :: PreTactic
   reductionPreTac assms concl = do
-    reduced <- performBetaRedex concl
+    reduced <- betaReduce concl
     equalityModusPonensPreTac reduced assms concl
 
   reductionTac :: Tactic
-  reductionTac =
-    by [
-      apply reductionPreTac
-    , try betaTac
-    ]
+  reductionTac = apply reductionPreTac
 
   --
   -- ** Eta equivalence
@@ -271,13 +325,3 @@ module Mosquito.Tactics where
           equalityModusPonensPreTac guess assms concl
         else
           fail $ "unfoldAppLTac"
-
-  --
-  -- ** Some simple automation
-  --
-
-  baseAuto :: Tactic
-  baseAuto =
-    alphaTac <|>
-    etaTac <|>
-    betaTac 
