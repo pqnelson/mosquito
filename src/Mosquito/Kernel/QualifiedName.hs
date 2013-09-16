@@ -33,17 +33,17 @@ where
 
   -- |Returns the path of a qualified name.
   qualifiedNamePath :: QualifiedName -> Path
-  qualifiedNamePath (QualifiedName (path, head)) = path
+  qualifiedNamePath (QualifiedName (path, _)) = path
 
   -- |Returns the head of a qualified name.
   qualifiedNameHead :: QualifiedName -> String
-  qualifiedNameHead (QualifiedName (path, head)) = head
+  qualifiedNameHead (QualifiedName (_, hd)) = hd
 
   -- |Creates a new qualified name from a path and head.
   --  XXX: shouldn't this fail if the head is the empty string,
   --  or should those checks be elsewhere, e.g. in the parser?
   mkQualifiedName :: Path -> String -> QualifiedName
-  mkQualifiedName path head = QualifiedName (path, head)
+  mkQualifiedName path hd = QualifiedName (path, hd)
 
   -- |Constructs a `simple name', that is a qualified name whose path is
   --  empty and consists solely of a head.
@@ -61,17 +61,17 @@ where
       mkQualifiedName path generated
     where
       generate :: Integer -> String -> S.Set String -> String
-      generate counter base avoid =
-        if base `S.member` avoid then
-          generate 1 (base ++ show counter) avoid
+      generate counter base avoiding =
+        if base `S.member` avoiding then
+          generate 1 (base ++ show counter) avoiding
         else
           base
 
   -- |Tests whether a qualified name is an infix name for pretty-printing
   --  purposes.  XXX: this is a really bad test and is broken.  Fixme.
   isInfix :: QualifiedName -> Bool
-  isInfix (QualifiedName (path, head)) =
-    case head of
+  isInfix (QualifiedName (_, hd)) =
+    case hd of
       ['_', _, '_'] -> True
       _             -> False
 
@@ -79,11 +79,11 @@ where
   --  For instance, in the qualified name @Mosquito.Bool._∧_@ the kernel
   --  is @∧@.
   partialInfixKernel :: QualifiedName -> String
-  partialInfixKernel (QualifiedName (path, ['_', k, '_'])) = [k]
+  partialInfixKernel (QualifiedName (_, ['_', k, '_'])) = [k]
 
   instance Pretty QualifiedName where
-    pretty (QualifiedName (path, head)) =
+    pretty (QualifiedName (path, hd)) =
       if null path then
-        head
+        hd
       else
-        L.intercalate "." path ++ "." ++ head
+        L.intercalate "." path ++ "." ++ hd

@@ -11,9 +11,13 @@ module Mosquito.Theories.Bool where
 
   import Mosquito.DerivedRules
   import Mosquito.Parsing
-  import Mosquito.ProofState
-  import Mosquito.Tactics
-  import Mosquito.Theory
+
+  import Mosquito.ProofState.ProofState
+  import Mosquito.ProofState.Stacktics
+  import Mosquito.ProofState.Tactics
+  import Mosquito.ProofState.Tacticals
+  
+  import Mosquito.Theories.Theory
 
   import Mosquito.Utility.Pretty
 
@@ -95,7 +99,7 @@ module Mosquito.Theories.Bool where
 
   -- |Solves all goals of the form @true@.
   trueITac :: Tactic
-  trueITac = Mosquito.Tactics.all trueIPreTac
+  trueITac = Mosquito.ProofState.Stackticals.all trueIPreTac
 
   trueITacTest = Mosquito.Utility.Pretty.putStrLn $ do
     trueC <- trueC

@@ -1,78 +1,49 @@
 {-# LANGUAGE TemplateHaskell, TypeOperators, DoAndIfThenElse #-}
 
-module Mosquito.Tactics where
+-- |Implements some basic tactics corresponding to the rules found
+--  in the kernel and in the file @DerivedRules.hs@.
+module Mosquito.ProofState.Tactics where
 
   import Prelude hiding (fail)
 
-  import Control.Arrow
-  import Control.Monad hiding (fail)
+  import Control.Arrow ((***))
 
-  import Data.Label
-  import qualified Data.List as L
+  import Mosquito.DerivedRules
 
   import Mosquito.Kernel.Term
 
-  import Mosquito.Utility.Pretty
-
-  import Mosquito.DerivedRules
-  import Mosquito.ProofState
+  import Mosquito.ProofState.ProofState
 
   --
-  -- * Tacticals
+  -- ** Basic tactics
   --
 
-  (<|>) :: Tactic -> Tactic -> Tactic
-  (<|>) left right state =
-    inference (left state) (const . right $ state) return
+  -- |Tactic that fails immediately with a generic message.
+  failTac :: Tactic
+  failTac = const $ fail "`failTac'"
 
-  try :: Tactic -> Tactic
-  try tactic state =
-    inference (tactic state) (const . return $ state) return
+  -- |Tactic that fails immediately with a supplied message.
+  failWithMessageTac :: String -> Tactic
+  failWithMessageTac = const . Fail
 
-  preceeding :: Tactic -> Tactic -> Tactic
-  preceeding = (>=>)
-
-  following :: Tactic -> Tactic -> Tactic
-  following = (<=<)
-
-  by :: [Tactic] -> Tactic
-  by []     state = return state
-  by (x:xs) state = do
-    state' <- x state
-    by xs state'
-
-  select :: Int -> Tactic -> Tactic
-  select i tac = selectITac (== i) `preceeding` tac
-
-  all :: PreTactic -> Tactic
-  all tac = selectPTac (\assms concl -> True) `preceeding` apply tac
-
-  allEqualities :: PreTactic -> Tactic
-  allEqualities tac =
-    selectPTac (\assms concl -> isEquality concl) `preceeding`
-      apply tac
-
-  --
-  -- * Tactics
-  --
-
-  --
-  -- ** Alpha-equivalence
-  --
+  -- |Tactic that doesn't acts as the identity function, making
+  --  no changes to the state.
+  idTac :: Tactic
+  idTac = return
 
   --
   -- ** Solve outright with a theorem
   --
 
+  -- |@PreTactic@ that solves a goal outright with a theorem.
   solvePreTac :: TheoremPreTactic
-  solvePreTac theorem assms concl =
+  solvePreTac theorem _ concl =
     if conclusion theorem == concl then
       return $ Refine (\[] -> return theorem) []
     else
-      fail . unwords $ [
-        "Theorem passed to `solveTac' does not solve the goal."
-      ]
+      fail "`solvePreTac'"
 
+  -- |Lifts @solvePreTac@ to a @Tactic@.
   solveTac :: TheoremTactic
   solveTac = apply . solvePreTac
 
@@ -80,94 +51,61 @@ module Mosquito.Tactics where
   -- ** Reflexivity
   --
 
+  -- |@PreTactic@ that solves an equality between two terms
+  --  that are alpha-equivalent.
   alphaPreTac :: PreTactic
-  alphaPreTac assms concl = do
-    (left, right) <- fromEquality concl
-    if left == right then do
-      theorem <- alpha left right
+  alphaPreTac _ concl = do
+    (l, r) <- fromEquality concl
+    if l == r then do
+      theorem <- alpha l r
       return $ Refine (\[] -> return theorem) []
     else
-      fail . unwords $ [
-        "Terms passed to `alphaPreTac' are not alpha-equivalent."
-      , unwords ["Was expecting `", pretty left, "' to be"]
-      , unwords ["equivalent to `", pretty right, "'."]
-      ]
+      fail "`alphaPreTac'"
 
+  -- |Lifts @alphaPreTac@ to a @Tactic@.
   alphaTac :: Tactic
-  alphaTac = allEqualities alphaPreTac
+  alphaTac = apply alphaPreTac
 
-  alphaTacTest = Mosquito.Utility.Pretty.putStrLn $ do
-    let a =  mkVar "a" boolType
-    let b =  mkVar "b" boolType
-    let l =  mkLam "a" boolType a
-    let r =  mkLam "b" boolType b
-    conj  <- mkEquality l r
-    prf   <- conjecture "alphaTacTest" conj
-    prf   <-
-      by [
-        alphaTac
-      ] prf
-    qed prf
-
+  -- |@PreTactic@ that solves an equality between two terms
+  --  that are syntactically equivalent.  Restricted form of
+  --  @alphaPreTac@.
   reflexivityPreTac :: PreTactic
-  reflexivityPreTac assms concl = do
+  reflexivityPreTac _ concl = do
     eq <- fromEquality concl
-    let (left, right) = (mkStructuralEquality *** mkStructuralEquality) eq
-    if left == right then do
+    let (l, r) = (mkStructuralEquality *** mkStructuralEquality) eq
+    if l == r then do
       theorem <- reflexivity . fst $ eq
       return $ Refine (\[] -> return theorem) []
     else
-      fail . unwords $ [
-        "Terms passed to `reflexivityPreTac' are not structurally"
-      , unwords ["equivalent.  Was expecting `", pretty . fst $ eq, "' to"]
-      , unwords ["be structurally equivalent to `", pretty . snd $ eq, "'."]
-      ]
+      fail "`reflexivityPreTac'"
 
+  -- |Lift @reflexivityPreTac@ to a @Tactic@.
   reflexivityTac :: Tactic
-  reflexivityTac = allEqualities reflexivityPreTac
-
-  reflexivityTacTest = Mosquito.Utility.Pretty.putStrLn $ do
-    let a = mkVar "a" boolType
-    let l = mkLam "a" boolType a
-    conj  <- mkEquality l l
-    prf   <- conjecture "reflexivityTacTest" conj
-    prf   <-
-      by [
-        reflexivityTac
-      ] prf
-    qed prf
+  reflexivityTac = apply reflexivityPreTac
 
   --
   -- ** Symmetry
   --
 
+  -- |Refines an equality goal, creating a new goal where the sides
+  --  of the equality are reversed.
   symmetryPreTac :: PreTactic
   symmetryPreTac assms concl = do
-    (left, right) <- fromEquality concl
-    concl         <- mkEquality right left
-    return $ Refine (\[t] -> symmetry t) [Open assms concl]
+    (l, r) <- fromEquality concl
+    nConcl <- mkEquality r l
+    return $ Refine (\[t] -> symmetry t) [Open assms nConcl]
 
+  -- |Lifts @symmetryPreTac@ to a @Tactic@.
   symmetryTac :: Tactic
   symmetryTac = apply symmetryPreTac
-
-  symmetryTacTest = Mosquito.Utility.Pretty.putStrLn $ do
-    let a    =  mkVar "a" boolType
-    let b    =  mkVar "b" boolType
-    let l    =  mkLam "a" boolType a
-    let r    =  mkLam "b" boolType b
-    conj     <- mkEquality l r
-    prf      <- conjecture "symmetryTacTest" conj
-    prf      <-
-      by [
-        symmetryTac
-      , select 0 alphaTac
-      ] prf
-    qed prf
 
   --
   -- ** Transitivity
   --
 
+  -- |Refine an equality goal, producing two new equality goals
+  --  corresponding to transitivity between the supplied term
+  --  and the two sides of the equality of the original goal.
   transitivityPreTac :: TermPreTactic
   transitivityPreTac middle assms concl = do
     (left, right) <- fromEquality concl
@@ -175,21 +113,26 @@ module Mosquito.Tactics where
     right <- mkEquality middle right
     return $ Refine (\[t, t'] -> transitivity t t') [Open assms left, Open assms right]
 
+  -- |Lifts @transitivityPreTac@ to a @Tactic@.
   transitivityTac :: TermTactic
-  transitivityTac = apply transitivityPreTac
+  transitivityTac = apply . transitivityPreTac
 
   --
   -- ** Abstract
   --
 
+  -- |Refines an equality goal, stripping lambda bound variables,
+  --  creating a new equality goal between the two bodies of the
+  --  original goal.
   abstractPreTac :: PreTactic
   abstractPreTac assms concl = do
-    (left, right)     <- fromEquality concl
-    (name, ty, leftBody)  <- fromLam left
-    (_,     _, rightBody) <- fromLam right
-    concl             <- mkEquality leftBody rightBody
+    (l, r)            <- fromEquality concl
+    (name, ty, lBody) <- fromLam l
+    (_,     _, rBody) <- fromLam r
+    concl             <- mkEquality lBody rBody
     return $ Refine (\[t] -> abstract name ty t) [Open assms concl]
 
+  -- | Lifts @abstractPreTac@ to a @Tactic@.
   abstractTac :: Tactic
   abstractTac = apply abstractPreTac
 
@@ -221,7 +164,7 @@ module Mosquito.Tactics where
       fail "`combineLTac'"
 
   combineLTac :: Tactic
-  combineLTac = allEqualities combineLPreTac
+  combineLTac = apply combineLPreTac
 
   combineRPreTac :: PreTactic
   combineRPreTac assms concl = do
@@ -235,7 +178,7 @@ module Mosquito.Tactics where
       fail "`combineTac"
 
   combineRTac :: Tactic
-  combineRTac = allEqualities combinePreTac
+  combineRTac = apply combinePreTac
 
   --
   -- ** Equality modus ponens
@@ -285,7 +228,7 @@ module Mosquito.Tactics where
       fail "`betaPreTac'"
 
   betaTac :: Tactic
-  betaTac = allEqualities betaPreTac
+  betaTac = apply betaPreTac
 
   reductionPreTac :: PreTactic
   reductionPreTac assms concl = do

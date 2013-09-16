@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell, TypeOperators #-}
 
-module Mosquito.Theory {- (
+module Mosquito.Theories.Theory {- (
   -- * Theories and miscellaneous utility functions
   Theory,
   isDeclaredTheoremOrAxiom, isDeclaredConstant, isDeclaredTypeFormer,
@@ -18,7 +18,6 @@ where
 
   import Data.Label
   import qualified Data.List as L
-  import qualified Data.Map as M
   import qualified Data.Set as S
 
   import qualified Mosquito.Kernel.Term as K
@@ -52,13 +51,13 @@ where
   theoryQualifiedName = get name
 
   isDeclaredTheoremOrAxiom :: QualifiedName -> Theory -> Bool
-  isDeclaredTheoremOrAxiom name theory = S.member name . S.map snd $ get theorems theory
+  isDeclaredTheoremOrAxiom nm theory = S.member nm . S.map snd $ get theorems theory
 
   isDeclaredConstant :: QualifiedName -> Theory -> Bool
-  isDeclaredConstant name theory = S.member name (get constants theory)
+  isDeclaredConstant nm theory = S.member nm $ get constants theory
 
   isDeclaredTypeFormer :: QualifiedName -> Theory -> Bool
-  isDeclaredTypeFormer name = S.member name . get types
+  isDeclaredTypeFormer nm = S.member nm . get types
 
   declaredAxiomQualifiedNames :: Theory -> S.Set QualifiedName
   declaredAxiomQualifiedNames =
@@ -93,9 +92,9 @@ where
   --  axioms and so on of the supertheory.
   --  XXX: check for a sensible name (what is a sensible name?)
   mkTheory :: Theory -> String -> Theory
-  mkTheory parent name =
+  mkTheory parent nm =
     Theory {
-      _name      = mkQualifiedName ["Mosquito"] name,
+      _name      = mkQualifiedName ["Mosquito"] nm,
       _constants = get constants parent,
       _theorems  = get theorems parent,
       _types     = get types parent
@@ -136,8 +135,8 @@ where
         K.fail $ "Theorem `" ++ pretty defName ++ "' already declared in theory `" ++ pretty (get name theory) ++ "'."
       else do
         (c, thm) <- K.primitiveNewDefinedConstant qname def typ
-        let mod  = modify theorems (S.insert (Proved, defName)) theory
-        return (c, thm, modify constants (S.insert qname) mod)
+        let modified  = modify theorems (S.insert (Proved, defName)) theory
+        return (c, thm, modify constants (S.insert qname) modified)
   --
   -- * Pretty printing theories
   --

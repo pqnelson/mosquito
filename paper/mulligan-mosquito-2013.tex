@@ -3,6 +3,7 @@
 \usepackage{amsfonts}
 \usepackage{amsmath}
 \usepackage{color}
+\usepackage[colorlinks]{hyperref}
 \usepackage{listings}
 \usepackage{microtype}
 \usepackage{prooftree}
@@ -14,11 +15,14 @@
 \institute{Computer Laboratory, University of Cambridge}
 
 \newcommand{\act}{\cdot}
+\newcommand{\aeq}{=_\alpha}
 \newcommand{\deffont}[1]{\textbf{#1}}
 \newcommand{\ent}{\vdash}
 \newcommand{\lam}[1]{\lambda{#1}.}
 \newcommand{\rulefont}[1]{\ensuremath{(\textbf{#1})}}
 \newcommand{\tf}[1]{\mathsf{#1}}
+
+\bibliographystyle{alpha}
 
 \definecolor{mygreen}{rgb}{0,0.6,0}
 \definecolor{mygray}{rgb}{0.5,0.5,0.5}
@@ -98,10 +102,58 @@ The
 
 Mosquito's term and type language is what one familiar with existing HOL implementations would expect.
 
+\begin{figure}
+\begin{gather*}
+\begin{prooftree}
+\phantom{h}
+\justifies
+a \aeq a
+\end{prooftree}
+\quad
+\begin{prooftree}
+\phantom{h}
+\justifies
+\tf{C} \aeq \tf{C}
+\end{prooftree}
+\quad
+\begin{prooftree}
+r \aeq r' \quad s \aeq s'
+\justifies
+rs \aeq r's'
+\end{prooftree}
+\quad
+\begin{prooftree}
+r \aeq r'
+\justifies
+\lam{a{:}\phi}r \aeq \lam{a{:}\phi}r'
+\end{prooftree}
+\quad
+\begin{prooftree}
+r \aeq (b\ a) \act s \quad (a \not\in fv(s))
+\justifies
+\lam{a{:}\phi}r \aeq \lam{b{:}\phi}s
+\end{prooftree}
+\end{gather*}
+\caption{Rules for inductively defining alpha-equivalence}
+\label{fig.alpha-equivalence}
+\end{figure}
+
+\paragraph{Alpha-equivalence and fresh names}
+The native notion of equality on higher-order terms is alpha-equivalence, or equality modulo specific choices of bound variable.
+The kernel implements an alpha-equivalence test based on swappings of variables, \emph{a la} Gabbay-Pitts nominal techniques~\cite{gabbay:new:1999}.
+
+Write $(a\ b)$ for the function such that $(a\ b)(a) = b$, $(a\ b)(b) = a$ and $(a\ b)(c) = c$ for all other $c$, assuming a permutative convention where $a$, $b$ and $c$ are assumed to denote distinct variables.
+We extend this definition `in the obvious' way to a swapping action on terms $(a\ b) \cdot t$.
+This action pushes the swapping through the term structure, renaming $\lambda$-abstracted variables as it passes, until it reaches the leaves of the term, wherein the swapping renames variables and evaporates on constants.
+With this definition, define a notion of alpha-equivalence using the rules in Figure~\ref{fig.alpha-equivalence}.
+
+
 \section{Tactics}
 \label{sect.tactics}
 
 \section{Conclusions}
 \label{sect.conclusions}
+
+\bibliography{mulligan-mosquito-2013}
 
 \end{document}

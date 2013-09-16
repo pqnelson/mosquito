@@ -38,7 +38,7 @@ maintainer:          dominic.p.mulligan@gmail.com
 -- A copyright notice.
 -- copyright:           
 
-category:            Math
+category:            Formal methods
 
 build-type:          Simple
 
@@ -51,17 +51,18 @@ library
   exposed-modules:     Mosquito.Kernel.Term
                        Mosquito.Kernel.QualifiedName
                        Mosquito.DerivedRules
-                       Mosquito.ProofState
-                       Mosquito.Tactics
-                       Mosquito.Theory
+                       Mosquito.Theories.Theory
                        Mosquito.Theories.Bool
+                       Mosquito.ProofState.ProofState
+                       Mosquito.ProofState.Tactics
+                       Mosquito.ProofState.Stacktics
                        Mosquito.Utility.Pretty
   
   -- Modules included in this library but not exported.
   -- other-modules:       
   
   -- Other library packages from which modules are imported.
-  build-depends:       base ==4.5.*, containers, fclabels, mtl
+  build-depends:       base, containers, fclabels, mtl, parsec
   
   -- Directories containing source files.
   hs-source-dirs:      src

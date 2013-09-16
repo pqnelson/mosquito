@@ -1,9 +1,9 @@
+{-# LANGUAGE DoAndIfThenElse #-}
+
 module Mosquito.Parsing where
 
   import qualified Data.List as L
   import qualified Data.Set as S
-
-  import Debug.Trace (trace)
 
   import Text.ParserCombinators.Parsec hiding (runParser)
 
@@ -39,11 +39,11 @@ module Mosquito.Parsing where
     deriving Show
 
   instance P.Pretty QualifiedName where
-    pretty (QualifiedName theory head) =
+    pretty (QualifiedName theory hd) =
       L.intercalate "." [
         "Mosquito"
       , theory
-      , P.pretty head
+      , P.pretty hd
       ]
 
   parseTheoryName :: Parser TheoryName
@@ -56,8 +56,8 @@ module Mosquito.Parsing where
   parseInfixNamePart =
     (string "_" >> return Hole) <|>
       do
-        string <- many1 letter
-        return . Piece $ string
+        s <- many1 letter
+        return . Piece $ s
 
   isValidHead :: [InfixNamePart] -> Bool
   isValidHead []                  = False
@@ -91,11 +91,11 @@ module Mosquito.Parsing where
   parseQualifiedName currentTheoryName = do
       theory <- parseTheoryName
       string "."
-      head   <- parseHead
-      return $ QualifiedName theory head
+      hd <- parseHead
+      return $ QualifiedName theory hd
     <|> do
-      head <- parseHead
-      return $ QualifiedName currentTheoryName head
+      hd <- parseHead
+      return $ QualifiedName currentTheoryName hd
 
   --
   -- ** Types
@@ -120,17 +120,17 @@ module Mosquito.Parsing where
     spaces >> string name >> spaces
     args      <- count arity $ spaces >> parseFactor others
     case K.mkTyOperator description args of
-      K.Fail err  -> fail ""
+      K.Fail err  -> fail . show $ err
       K.Success d -> return d
 
   parseMixfix :: Parser a -> [InfixNamePart] -> Parser [a]
-  parseMixfix p []        = fail ""
+  parseMixfix _ []        = fail "`parseMixfix'"
   parseMixfix p (Hole:xs) = do
     x  <- p
     spaces
-    xs <- parseMixfix p xs
-    return $ x : xs
-  parseMixfix p ((Piece q):xs) = do
+    pXs <- parseMixfix p xs
+    return $ x : pXs
+  parseMixfix _ ((Piece q):_) = do
     spaces >> string q >> spaces
     return []
 
@@ -138,7 +138,7 @@ module Mosquito.Parsing where
   parseMixfixTypeOperator (path, description) others = do
     args <- parseMixfix (parseFactor others) path
     case K.mkTyOperator description args of
-      K.Fail err  -> fail ""
+      K.Fail err  -> fail . show $ err
       K.Success t -> return t
 
   parseSingletonTypeOperator :: (String, K.TypeOperatorDescription) -> Parser K.Type
@@ -147,7 +147,7 @@ module Mosquito.Parsing where
     if arity == 0 then do
       spaces >> string name >> spaces
       case K.mkTyOperator description [] of
-        K.Fail err  -> fail ""
+        K.Fail err  -> fail . show $ err
         K.Success t -> return t
     else
       fail ""
@@ -159,12 +159,12 @@ module Mosquito.Parsing where
       between (string "(") (string ")") (parseType config)
     where
       folded = foldr (<|>) (fail "")
-        $ map (\(head, descr) ->
-            case head of
+        $ map (\(hd, descr) ->
+            case hd of
               Nonfix n ->
                 parseSingletonTypeOperator (n, descr)
               Mixfix{} ->
-                parseSingletonTypeOperator (P.pretty head, descr)) $ S.toList config
+                parseSingletonTypeOperator (P.pretty hd, descr)) $ S.toList config
 
   parseType :: S.Set (Head, K.TypeOperatorDescription) -> Parser K.Type
   parseType config =
@@ -172,12 +172,12 @@ module Mosquito.Parsing where
       parseFactor config
     where
       folded = foldr (<|>) (fail "")
-        . map (\(head, descr) ->
-            case head of
+        . map (\(hd, descr) ->
+            case hd of
               Nonfix n ->
                 parseNonfixTypeOperator (n, descr) config
-              Mixfix m ->
-                parseNonfixTypeOperator (P.pretty head, descr) config) $ S.toList config
+              Mixfix{} ->
+                parseNonfixTypeOperator (P.pretty hd, descr) config) $ S.toList config
 
   kernelTypeParsingInfo :: S.Set (Head, K.TypeOperatorDescription)
   kernelTypeParsingInfo =
@@ -203,8 +203,8 @@ module Mosquito.Parsing where
       ]
 
   instance P.Size PType where
-    size PTyVar{}              = 1
-    size (PTyOperator op args) = 1 + (sum . map P.size $ args)
+    size PTyVar{}             = 1
+    size (PTyOperator _ args) = 1 + (sum . map P.size $ args)
 
   data PTerm
     = PVar     String

@@ -1,3 +1,5 @@
+{-# LANGUAGE DoAndIfThenElse #-}
+
 -- |The Mosquito kernel, defining types, terms, theorems, and providing primitive
 --  inference rules upon which everything else is built, along with simple mechanisms
 --  for extending the Mosquito logic (e.g. declaring axioms, defining new types and
@@ -69,10 +71,7 @@ where
   -- import Prelude (Bool(..), String)
   import Prelude hiding (fail)
 
-  import Control.Monad hiding (fail)
-
   import qualified Data.Foldable as F
-  import Data.Maybe
   import qualified Data.List as L
   import qualified Data.Set as S
 
@@ -102,8 +101,8 @@ where
 
   -- |An elimination principle for the Inference monad.
   inference :: Inference a -> (String -> b) -> (a -> b) -> b
-  inference (Fail err)  f s = f err
-  inference (Success t) f s = s t
+  inference (Fail err)  f _ = f err
+  inference (Success t) _ s = s t
 
   -- |A function signifying a failing computation within the Inference monad.
   --  Parameter is the error message that will be displayed when the error
@@ -125,7 +124,7 @@ where
 
   instance Monad Inference where
     return            = Success
-    (Fail err)  >>= f = Fail err
+    (Fail err)  >>= _ = Fail err
     (Success t) >>= f = f t
 
   --
@@ -230,7 +229,7 @@ where
 
   -- |Tests whether a Type is a function type.
   isFunction :: Type -> Bool
-  isFunction (TyOperator f [d, r]) = f == functionDescription
+  isFunction (TyOperator f [_, _]) = f == functionDescription
   isFunction _                     = False
 
   -- |Tests whether a Type is a propositional (Boolean) type.
@@ -285,7 +284,7 @@ where
   --  type variables in a type are deemed free) into a Set.
   ftv :: Type -> S.Set String
   ftv (TyVar v)           = S.singleton v
-  ftv (TyOperator d args) = L.foldr S.union S.empty $ map ftv args 
+  ftv (TyOperator _ args) = L.foldr S.union S.empty $ map ftv args 
 
   --
   -- ** Some basic types.
@@ -315,7 +314,7 @@ where
 
   instance Size Type where
     size TyVar{}             = 1
-    size (TyOperator d args) = 1 + length args
+    size (TyOperator _ args) = 1 + length args
 
   instance Pretty Type where
     pretty (TyVar v)                 = v
@@ -444,9 +443,9 @@ where
 
   mkApp :: Term -> Term -> Inference Term
   mkApp l r = do
-    typeOfL    <- typeOf l
-    typeOfR    <- typeOf r
-    (dom, rng) <- fromFunction typeOfL
+    typeOfL  <- typeOf l
+    typeOfR  <- typeOf r
+    (dom, _) <- fromFunction typeOfL
     if dom == typeOfR
       then
         return $ App l r
@@ -484,7 +483,7 @@ where
   equality = Const equalityDescription
 
   isEquality :: Term -> Bool
-  isEquality (App (App (Const d) c) r) = constantDescriptionQualifiedName d == equalityQualifiedName
+  isEquality (App (App (Const d) _) _) = constantDescriptionQualifiedName d == equalityQualifiedName
   isEquality _                         = False
 
   mkEquality :: Term -> Term -> Inference Term
@@ -513,7 +512,7 @@ where
   --
 
   typeOf :: Term -> Inference Type
-  typeOf (Var a ty) = return ty
+  typeOf (Var _ ty) = return ty
   typeOf (Const d)  = return $ constantDescriptionType d
   typeOf (App l r)  = do
     lTy        <- typeOf l
@@ -528,7 +527,7 @@ where
           "do not match.  Was expecting `" ++ pretty lTy ++ "' but found",
           "`" ++ pretty rTy ++ "'."
         ]
-  typeOf (Lam a ty bdy) = do
+  typeOf (Lam _ ty bdy) = do
     bodyTy <- typeOf bdy
     return $ mkFunctionType ty bodyTy
 
@@ -568,11 +567,11 @@ where
   termSubst dom rng (Var v ty)
     | dom == v  = return rng
     | otherwise = return $ Var v ty
-  termSubst dom rng (Const c) = return . Const $ c
+  termSubst _ _ (Const c) = return . Const $ c
   termSubst dom rng (App l r) = do
-    l <- termSubst dom rng l
-    r <- termSubst dom rng r
-    return $ App l r
+    nL <- termSubst dom rng l
+    nR <- termSubst dom rng r
+    return $ App nL nR
   termSubst dom rng (Lam a ty body)
     | a == dom =
       fail . unwords $ [
@@ -585,8 +584,8 @@ where
       , "in `termSubst'."
       ]
     | otherwise = do
-      body <- termSubst dom rng body
-      return $ Lam a ty body
+      nBody <- termSubst dom rng body
+      return $ Lam a ty nBody
 
 
   --
@@ -596,20 +595,20 @@ where
   -- |Collects the free variables (i.e. variables appearing within a
   --  term not bound by a lambda-abstraction) into a Set.
   fv :: Term -> S.Set String
-  fv (Var a ty)     = S.singleton a
-  fv (Const d)      = S.empty
+  fv (Var a _)     = S.singleton a
+  fv (Const _)      = S.empty
   fv (App l r)      = fv l `S.union` fv r
-  fv (Lam a ty bdy) = a `S.delete` fv bdy
+  fv (Lam a _ bdy) = a `S.delete` fv bdy
 
   -- |Collects the type variables appearing anywhere within a term
   --  into a Set.  Lambda abstractions, constants and term variables
   --  are all decorated with types.  This function collects the type
   --  variables of those types into a Set.
   typeVars :: Term -> S.Set String
-  typeVars (Var a ty)     = ftv ty
+  typeVars (Var _ ty)     = ftv ty
   typeVars (Const d)      = ftv $ constantDescriptionType d
   typeVars (App l r)      = typeVars l `S.union` typeVars r
-  typeVars (Lam a ty bdy) = ftv ty `S.union` typeVars bdy
+  typeVars (Lam _ ty bdy) = ftv ty `S.union` typeVars bdy
 
   -- |Collects the free variables of a list of terms into a Set.
   fvs :: (F.Foldable f, Functor f) => f Term -> S.Set String
@@ -622,7 +621,7 @@ where
     | a == c    = Var b ty
     | b == c    = Var a ty
     | otherwise = Var c ty
-  permute a b (Const d) = Const d
+  permute _ _ (Const d) = Const d
   permute a b (App l r) = App (permute a b l) $ permute a b r
   permute a b (Lam c ty body)
     | a == c    = Lam b ty $ permute a b body
@@ -657,10 +656,10 @@ where
         go :: Term -> Term -> Bool
         go (Var a ty)     (Var b ty')      = a == b && ty == ty'
         go (Const c)      (Const d)        = c == d
-        go (App l r)      (App m s)        =
+        go (App l r)      (App m q)        =
           and [
             mkStructuralEquality l == mkStructuralEquality m
-          , mkStructuralEquality r == mkStructuralEquality s
+          , mkStructuralEquality r == mkStructuralEquality q
           ]
         go (Lam a ty bdy) (Lam b ty' bdy') =
           and [
@@ -677,18 +676,18 @@ where
     size Var{}          = 1
     size Const{}        = 1
     size (App l r)      = 1 + size l + size r
-    size (Lam a ty bdy) = 1 + size bdy
+    size (Lam _ _ bdy) = 1 + size bdy
 
   -- TODO: print mixfix syntax correctly like for types.
   instance Pretty Term where
-    pretty (Var v ty)     = v
+    pretty (Var a _)     = a
     pretty (Const d)      = pretty d
     pretty (App (App (Const d) c) r)
       | isInfix . constantDescriptionQualifiedName $ d = unwords [bracket c, pretty d, bracket r]
       | otherwise = bracket (App (Const d) c) ++ " " ++ bracket r
     pretty (App (App l c) r) = unwords . map bracket $ [l, c, r]
     pretty (App l r)      = unwords [bracket l, bracket r]
-    pretty (Lam a ty bdy) =
+    pretty (Lam a _ bdy) =
       "λ" ++ a ++ ". " ++ bracket bdy
 
   --
@@ -728,11 +727,11 @@ where
 
   -- |Obtain the hypotheses of a theorem.
   hypotheses :: Theorem -> [Term]
-  hypotheses (Theorem _ (hyps, concl)) = hyps
+  hypotheses (Theorem _ (hyps, _)) = hyps
 
   -- |Obtain the conclusion of a theorem.
   conclusion :: Theorem -> Term
-  conclusion (Theorem _ (hyps, concl)) = concl
+  conclusion (Theorem _ (_, concl)) = concl
 
   -- |Obtain the provenance flag of a theorem.
   provenance :: Theorem -> Provenance
@@ -747,7 +746,7 @@ where
   delete = L.deleteBy (==)
 
   deleteTheorem :: Term -> [Theorem] -> [Theorem]
-  deleteTheorem t [] = []
+  deleteTheorem _ [] = []
   deleteTheorem t (Theorem p ([], concl):xs)
     | t == concl = deleteTheorem t xs
     | otherwise  = Theorem p ([], concl):deleteTheorem t xs
@@ -758,18 +757,18 @@ where
   --
 
   instance Pretty Theorem where
-    pretty (Theorem provenance ([], concl)) =
+    pretty (Theorem p ([], concl)) =
       unwords [
         "⊢"
       , pretty concl
-      , pretty provenance
+      , pretty p
       ]
-    pretty (Theorem provenance (hyps, concl)) =
+    pretty (Theorem p (hyps, concl)) =
       unwords [
         L.intercalate ",\n" $ map pretty hyps
       , "⊢"
       , pretty concl
-      , pretty provenance
+      , pretty p
       ]
 
   --
@@ -882,8 +881,8 @@ where
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
-    body <- termSubst name b body
-    eq   <- mkEquality t body
+    nBody <- termSubst name b body
+    eq   <- mkEquality t nBody
     return $ Theorem DerivedSafely ([], eq)
   beta t =
     fail . unwords $ [
@@ -923,9 +922,9 @@ where
 
   instantiation :: String -> Term -> Theorem -> Inference Theorem
   instantiation dom rng (Theorem p (hyps, concl)) = do
-    hyps  <- mapM (termSubst dom rng) hyps
-    concl <- termSubst dom rng concl
-    return $ Theorem p (hyps, concl)
+    nHyps  <- mapM (termSubst dom rng) hyps
+    nConcl <- termSubst dom rng concl
+    return $ Theorem p (nHyps, nConcl)
 
   --
   -- * Extending the logic
@@ -935,9 +934,9 @@ where
   primitiveNewDefinedConstant name t typ =
     if fv t == S.empty then
       if typeVars t `S.isSubsetOf` ftv typ then do
-        let const = mkConst $ DefinedConstant name typ t
-        eq <- mkEquality const t
-        return (const, Theorem DerivedSafely ([], eq))
+        let defined = mkConst $ DefinedConstant name typ t
+        eq <- mkEquality defined t
+        return (defined, Theorem DerivedSafely ([], eq))
       else
         fail . unwords $ [
           "Free type variables of definiens supplied to `primitiveNewDefinedConstant'",

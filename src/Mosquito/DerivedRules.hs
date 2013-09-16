@@ -11,11 +11,6 @@ module Mosquito.DerivedRules (
 
   import Prelude hiding (fail)
 
-  import Control.Monad hiding (fail)
-
-  import qualified Data.Set as S
-
-  import Mosquito.Kernel.QualifiedName
   import Mosquito.Kernel.Term
 
   --
@@ -35,7 +30,7 @@ module Mosquito.DerivedRules (
   -- |Produces a derivation of @Gamma ⊢ f x = g x@ from a derivation of
   --  @Gamma ⊢ f = g@ provided the supplied term @x@ is of the correct type.
   combineR :: Term -> Theorem -> Inference Theorem
-  combineR t thm = do 
+  combineR t thm = do
     eq <- reflexivity t
     combine thm eq
 
