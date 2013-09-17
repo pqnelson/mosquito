@@ -8,6 +8,9 @@
 \usepackage{microtype}
 \usepackage{prooftree}
 
+\usepackage{tgpagella}
+\usepackage[T1]{fontenc}
+
 \author{Dominic P. Mulligan}
 \title{Mosquito}
 \subtitle{An implementation of higher-order logic}
@@ -19,7 +22,7 @@
 \newcommand{\deffont}[1]{\textbf{#1}}
 \newcommand{\ent}{\vdash}
 \newcommand{\lam}[1]{\lambda{#1}.}
-\newcommand{\rulefont}[1]{\ensuremath{(\textbf{#1})}}
+\newcommand{\rulefont}[1]{\ensuremath{(\mathbf{#1})}}
 \newcommand{\tf}[1]{\mathsf{#1}}
 
 \bibliographystyle{alpha}
@@ -97,56 +100,199 @@ The
 \section{Kernel}
 \label{sect.kernel}
 
+\subsection{Error handling}
+\label{subsect.error.handling}
+
+Traditional HOLs use the exception mechanism of their implementation language---typically a variant of ML---to signal failure, both within the kernel, and outside of it, in their tactic mechanism.
+For example, \texttt{term.ml} of the HOL Light distribution makes heavy use of OCaml's exception mechanism to signal failure.
+
+Prevailing Haskell style, in contrast, favours the use of monads coupled with Haskell's in built \texttt{do}-notation syntactic sugar.
+
 \subsection{Terms and types}
 \label{subsect.terms.and.types}
 
-Mosquito's term and type language is what one familiar with existing HOL implementations would expect.
+Mosquito types are simple types with top-level parametric polymorphism:
+\begin{displaymath}
+\phi, \psi, \tau ::= \alpha \mid \tf{T}_\delta(\phi_1, \ldots, \phi_n)
+\end{displaymath}
+We use $\alpha$, $\beta$, $\gamma$, and so on, to range over \deffont{type variables}, represented concretely in the Haskell implementation with the \texttt{String} data type.
+We use $\tf{T}$, $\tf{T}'$, $\tf{T}''$, and so on, to range over arbitrary \deffont{type constructors}.
+We write $tv(-)$ for the set of type variables in a term, and write $\phi[\beta := \psi]$ for the substitution operation that replaces all occurrences of $\beta$ in $\phi$ with $\psi$.
 
-\begin{figure}
+Type constructors are equipped with an \deffont{arity}, a natural number, and are always fully applied to a list of other types of length matching their arity.
+We use Haskell's abstraction mechanisms to enforce this.
+All type constructors are tagged with a \deffont{type constructor description}.
+We use $\delta$, $\delta'$, and so on to range over type constructor descriptions.
+More on these later.
+
+Mosquito has two primitive type constructors, $Bool$ the type of propositions, with arity zero, and $- \Rightarrow -$, the function space, of arity two.
+For ease of reading we write $Bool$ and $\phi \Rightarrow \psi$ for types constructed from these type constructors henceforth.
+We assume $- \Rightarrow -$ associates to the right.
+To maintain consistency, new type constructors may only be introduced using an exposed kernel function, which performs appropriate checks.
+
+Mosquito terms are $\lambda$-terms extended with constants:
+\begin{displaymath}
+t, u, v ::= a^\phi \mid \tf{C}_\delta^\phi \mid tu \mid \lam{a{:}\phi}t
+\end{displaymath}
+We use $a$, $b$, $c$, and so on, to range over a countably infinite set of \deffont{variables}.
+We adopt a permutative convention, so $a$ and $b$ are always assumed to denote distinct variables.
+Variables are explicitly typed.
+
+We use $\tf{C}$, $\tf{C}'$, $\tf{C}''$, and so on, to range over \deffont{constants}, represented concretely in the Haskell implementation with the \texttt{String} data type.
+Constants are explicitly typed and are tagged with a \deffont{constant description}.
+Overloading notation, we use $\delta$, $\delta'$, and so on, to range over constant descriptions.
+It will always be clear from context whether $\delta$ is a type operator description or a constant description.
+
+Mosquito has a single primitive constant, $\approx$, the equality constant of type $\alpha \rightarrow \alpha \rightarrow Bool$.
+For ease of reading we write a fully applied equality infix, styling $\approx t\ u$ as $t \approx u$.
+
+Application is assumed to associate to the left.
+We insert parentheses freely when doing so is deemed to increase legibility.
+We write $fv(-)$ for the usual set of free variables of a term.
+We write $ftv(-)$ for the set of type variables appearing in the types of a term.
+We write $t[\beta := \psi]$ for the substitution operation that replaces occurrences of $\beta$ in the types appearing in $t$ with $\psi$.
+
+We write $type(t) = \phi$ to denote that $t$ has type $\phi$.
+We refer to terms with propositional type (so $type(t) = Bool$) as \deffont{formulae}.
+Only type-checked terms may pass through the kernel.
+We enforce this using Haskell's abstraction mechanisms, combined with smart constructors of the form:
+\begin{displaymath}
+mkApp\ ::\ Term \rightarrow Term \rightarrow Inference\ Term
+\end{displaymath}
+\texttt{mkApp} is the only potentially failing smart constructor of this form, failing when the application would lead to a type correct term.
+
+Terms are deconstructed using exported functions of the form:
+\begin{displaymath}
+fromEquality\ ::\ Term \rightarrow Inference\ (Term, Term)
+\end{displaymath}
+The use of monads in deconstruction functions of this form leads to a relatively succinct programming style outside of the kernel:
+\begin{displaymath}
+\begin{aligned}
+foo\ concl = \mathbf{do} & \\
+    (l,\ r)            & \leftarrow fromEquality\ concl \\
+    (name,\ ty,\ lBody) & \leftarrow fromLam\ l \\
+    (\_,\   \_,\ rBody) & \leftarrow fromLam\ r \\
+    & ...
+\end{aligned}
+\end{displaymath}
+Failure to deconstruct \texttt{concl} results in the error being propagated throughout the rest of the function body by the error monad.
+An alternative approach would be to use view patterns, an extension implemented in the Glasgow Haskell Compiler (GHC), with proprietary views for deconstructing e.g. equalities.
+Due to a preference for avoiding Haskell language extensions within the kernel proper\footnote{The only GHC language extension used in the kernel being the relatively prosaic \texttt{DoAndIfThenElse}.} we have avoided this approach.
+
+\paragraph{Alpha-equivalence and fresh names}
+The native notion of equality on higher-order terms is $\alpha$-equivalence.
+The Mosquito kernel implements an $\alpha$-equivalence test based on swappings of variables, \emph{a la} Gabbay-Pitts nominal techniques~\cite{gabbay:new:1999}.
+
+Write $(a\ b)$ for the function that sends $a$ to $b$ to $a$ and leaves all other $c$ fixed.
+Using $\pi$ to range arbitrarily over swappings, we extend this definition to a swapping action on terms $\pi \cdot t$:
+\begin{displaymath}
+\pi \cdot a \equiv \pi(a) \;\quad \pi \cdot \tf{C}_D \equiv \tf{C}_D \;\quad \pi \cdot tu \equiv (\pi \cdot t)(\pi \cdot u) \;\quad \pi \cdot \lam{a{:}\phi}t \equiv \lam{\pi(a){:}\phi}(\pi \act t)
+\end{displaymath}
+Intuitively, this action commutes with the structure of a term, acting on any variable as it passes, evaporating on constants.
+Types remain fixed.
+With this, inductively define a notion of `$\alpha$-equivalence' using the following rules:
 \begin{gather*}
 \begin{prooftree}
 \phantom{h}
 \justifies
 a \aeq a
+\using\rulefont{{\aeq}a}
 \end{prooftree}
-\quad
+\qquad
 \begin{prooftree}
 \phantom{h}
 \justifies
-\tf{C} \aeq \tf{C}
+\tf{C}_D \aeq \tf{C}_D
+\using\rulefont{{\aeq}\tf{C}}
 \end{prooftree}
-\quad
+\qquad
 \begin{prooftree}
-r \aeq r' \quad s \aeq s'
+t \aeq t' \quad u \aeq u'
 \justifies
-rs \aeq r's'
+tu \aeq t'u'
+\using\rulefont{{\aeq}tu}
 \end{prooftree}
-\quad
+\\[1ex]
 \begin{prooftree}
-r \aeq r'
+t \aeq t'
 \justifies
-\lam{a{:}\phi}r \aeq \lam{a{:}\phi}r'
+\lam{a{:}\phi}t \aeq \lam{a{:}\phi}t'
+\using\rulefont{{\aeq}{\lambda}a}
 \end{prooftree}
-\quad
+\qquad
 \begin{prooftree}
-r \aeq (b\ a) \act s \quad (a \not\in fv(s))
+t \aeq (b\ a) \act u \quad (a \not\in fv(u))
 \justifies
-\lam{a{:}\phi}r \aeq \lam{b{:}\phi}s
+\lam{a{:}\phi}t \aeq \lam{b{:}\phi}u
+\using\rulefont{{\aeq}{\lambda}b}
 \end{prooftree}
 \end{gather*}
-\caption{Rules for inductively defining alpha-equivalence}
-\label{fig.alpha-equivalence}
+These rules define an equivalence relation, a fact that can be readily checked by a series of routine inductions on derivations.
+As the rules are syntax directed we obtain an algorithm for deciding equivalence by reading them backwards, easily implemented in Haskell.
+Taken together, these rules capture the essence of $\alpha$-equivalence with the rule \rulefont{{\aeq}{\lambda}b} corresponding to that notion's `bound variable names do not matter' characteristic.
+
+Why use swappings instead of the usual paper definition of $\alpha$-equivalence taken in terms of capture-avoiding substitution, or some other mechanism?
+In \rulefont{{\aeq}{\lambda}b} bound names are swapped in the bodies of the $\lambda$-abstractions.
+Note here that no fresh variable name needs to be synthesised, as we reuse what is already present in the terms we are testing.
+Compare this to an alternative formulation of $\alpha$-equivalence, using substitution:
+\begin{displaymath}
+\begin{prooftree}
+t \aeq u[a := b] \quad (a \not\in fv(u))
+\justifies
+\lam{a{:}\phi}t \aeq \lam{b{:}\phi}u
+\using\rulefont{{\aeq}{\lambda}b'}
+\end{prooftree}
+\end{displaymath}
+Here, the operation $u[a := b]$ may still require fresh name generation despite $a \not\in fv(u)$, should the term $u$ have a $\lambda$-bound occurrence of $a$ or $b$, for instance.
+With our equivalence test based on swappings, we may remove fresh name generation entirely from the kernel.
+This has some advantages, and also some implications for the design of the rest of the kernel:
+\begin{enumerate}
+\item
+The size of the kernel is reduced.
+Fresh name generation is removed from trusted `kernel space' and placed in untrusted `user space'.
+\item
+The user (or tactics) has control over how fresh names are generated.
+Fresh name generation can be changed without affecting the trusted status of the kernel itself.
+Compare this to HOL Light, for example, where fresh name generation is a part of the kernel and cannot be changed.\footnote{For example, in the HOL Light distribution see the function \texttt{variant}, where fresh name generation takes place implicitly, and the function \texttt{vsubst} that performs a substitution on terms making use of this implicit renaming, in file \texttt{term.ml}. In the experimental kernel of the HOL4 distribution, see the function \texttt{subst}, where \texttt{genvar} is called, in the file \texttt{Term.sml}.}
+\item
+The design philosophy of the kernel inevitably follows a slightly different line from existing HOLs.
+For instance, capture avoiding substitution on terms in Mosquito's kernel is a potentially failing operation, with Haskell type
+\begin{displaymath}
+termSubst\ ::\ String \rightarrow Term \rightarrow Term \rightarrow Inference\ Term
+\end{displaymath}
+failing if $\lambda$-bound variables are not sufficiently fresh for substitution to proceed.
+The Mosquito kernel therefore has a `verifying' character for more complex, and historically error-prone operations such as fresh name generation and capture-avoiding substitution.
+\end{enumerate}
+
+\subsection{Logic}
+\label{subsect.logic}
+
+\begin{figure}
+\begin{gather*}
+\begin{prooftree}
+(t \aeq u)
+\justifies
+\emptyset \ent t = u
+\using\rulefont{alpha}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u
+\justifies
+\Gamma \ent u = t
+\using\rulefont{sym}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u \quad \Gamma \ent u = v
+\justifies
+\Gamma \ent t = v
+\using\rulefont{trans}
+\end{prooftree}
+\end{gather*}
+\caption{Derivable equality in Mosquito HOL}
+\label{fig.derivable.equality}
 \end{figure}
-
-\paragraph{Alpha-equivalence and fresh names}
-The native notion of equality on higher-order terms is alpha-equivalence, or equality modulo specific choices of bound variable.
-The kernel implements an alpha-equivalence test based on swappings of variables, \emph{a la} Gabbay-Pitts nominal techniques~\cite{gabbay:new:1999}.
-
-Write $(a\ b)$ for the function such that $(a\ b)(a) = b$, $(a\ b)(b) = a$ and $(a\ b)(c) = c$ for all other $c$, assuming a permutative convention where $a$, $b$ and $c$ are assumed to denote distinct variables.
-We extend this definition `in the obvious' way to a swapping action on terms $(a\ b) \cdot t$.
-This action pushes the swapping through the term structure, renaming $\lambda$-abstracted variables as it passes, until it reaches the leaves of the term, wherein the swapping renames variables and evaporates on constants.
-With this definition, define a notion of alpha-equivalence using the rules in Figure~\ref{fig.alpha-equivalence}.
-
 
 \section{Tactics}
 \label{sect.tactics}
