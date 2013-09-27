@@ -1,14 +1,16 @@
+{-# LANGUAGE DoAndIfThenElse #-}
+
 -- |Modules implementing some LCF-style tacticals, for sequencing
 --  together, and otherwise combining, tactics, into larger, more
 --  complex tactics.
 module Mosquito.ProofState.Tacticals (
   -- * Sequencing tacticals
-  before, after, by,
+  by,
   -- * Conditional tacticals
   (<|>),
   conditional, conditionalTerm, conditionalTheorem,
   -- * Looping tacticals
-  repeat, forever,
+  repeatN, repeat,
   -- * Failure handling tacticals
   try
 )
@@ -27,16 +29,6 @@ where
   -- * Sequencing tacticals
   --
 
-  -- |Sequences the first input tactic before the second
-  --  input tactic.
-  before :: Tactic -> Tactic -> Tactic
-  before = (>=>)
-
-  -- |Sequences the second input tactic before the first
-  --  input tactic.
-  after :: Tactic -> Tactic -> Tactic
-  after = (<=<)
-
   -- |Applies a list of tactics in sequences, with the head
   --  of the list being applied first, second element second,
   --  and so on.
@@ -47,12 +39,16 @@ where
   -- * Choice tacticals
   --
 
+  infixr <|>
+
   -- |Applies the first input tactic.  If this tactic fails,
   --  then the result of applying the second input tactic is
   --  returned, otherwise the result of the first is returned.
   (<|>) :: Tactic -> Tactic -> Tactic
   (<|>) l r state =
-    inference (l state) (const . r $ state) return
+    case l state of
+      Fail{} -> r state
+      Success lState -> return lState
 
   -- |Boolean conditional application, applies the first tactic
   --  if the first argument is @True@, otherwise applies the
@@ -80,13 +76,17 @@ where
   --
 
   -- |Repeat application of a tactic a fixed number of times.
-  repeat :: Int -> Tactic -> Tactic
-  repeat 0 t = idTac
-  repeat m t = t `before` repeat (m - 1) t
+  repeatN :: Int -> Tactic -> Tactic
+  repeatN 0 _ = idTac
+  repeatN m t = t >=> repeatN (m - 1) t
 
-  -- |Repeat application of a tactic forever.
-  forever :: Tactic -> Tactic
-  forever t = t `before` forever t
+  -- |Repeat application of a tactic indefinitely, returning the last
+  --  status upon which the application was successful.
+  repeat :: Tactic -> Tactic
+  repeat t status =
+    case t status of
+      Fail err  -> return status
+      Success s -> repeat t s
 
   --
   -- * Failure
@@ -97,4 +97,6 @@ where
   --  otherwise returns the updated state.
   try :: Tactic -> Tactic
   try tactic state =
-    inference (tactic state) (const . return $ state) return
+    case tactic state of
+      Fail{}    -> return state
+      Success s -> return s

@@ -33,7 +33,7 @@
 
 \lstset{ %
   backgroundcolor=\color{white},   % choose the background color; you must add \usepackage{color} or \usepackage{xcolor}
-  basicstyle=\scriptsize\tt,        % the size of the fonts that are used for the code
+  basicstyle=\footnotesize\ttfamily,        % the size of the fonts that are used for the code
   breakatwhitespace=false,         % sets if automatic breaks should only happen at whitespace
   breaklines=true,                 % sets automatic line breaking
   captionpos=b,                    % sets the caption-position to bottom
@@ -41,22 +41,24 @@
   %deletekeywords={...},            % if you want to delete keywords from the given language
   %escapeinside={\%*}{*)},          % if you want to add LaTeX within your code
   extendedchars=true,              % lets you use non-ASCII characters; for 8-bits encodings only, does not work with UTF-8
-  %frame=single,                    % adds a frame around the code
+  frame=single,                    % adds a frame around the code
   keepspaces=true,                 % keeps spaces in text, useful for keeping indentation of code (possibly needs columns=flexible)
   keywordstyle=\color{blue},       % keyword style
   language=haskell,                 % the language of the code
+  mathescape=true,
   %morekeywords={*,...},            % if you want to add more keywords to the set
-  %numbers=left,                    % where to put the line-numbers; possible values are (none, left, right)
+  numbers=left,                    % where to put the line-numbers; possible values are (none, left, right)
   %numbersep=5pt,                   % how far the line-numbers are from the code
-  %numberstyle=\tiny\color{mygray}, % the style that is used for the line-numbers
-  %rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
+  numberstyle=\tiny\color{mygray}, % the style that is used for the line-numbers
+  rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
   showspaces=false,                % show spaces everywhere adding particular underscores; it overrides 'showstringspaces'
   showstringspaces=false,          % underline spaces within strings only
   showtabs=false,                  % show tabs within strings adding particular underscores
   %stepnumber=2,                    % the step between two line-numbers. If it's 1, each line will be numbered
   stringstyle=\color{mymauve},     % string literal style
   tabsize=2,                       % sets default tabsize to 2 spaces
-  title=\lstname                   % show the filename of files included with \lstinputlisting; also try caption instead of title
+  title=\lstname,                   % show the filename of files included with \lstinputlisting; also try caption instead of title
+  belowskip=-1.125\baselineskip
 }
 
 \begin{document}
@@ -64,9 +66,9 @@
 \maketitle
 
 \begin{abstract}
-We present \emph{Mosquito}, a new LCF-style implementation of higher-order logic (`HOL') written in Haskell, a pure functional programming language.
+We present \emph{Mosquito}, a new LCF-style implementation of higher-order logic (``HOL'') written in Haskell, a pure functional programming language.
 Mosquito requires a kernel design that does not rest on the use of global references, an ML language feature heavily used in existing HOL kernels.
-Wiedijk suggested one such design in his work on `Stateless HOL', a stateless revision of the HOL Light kernel.
+Wiedijk suggested one such design in his work on ``Stateless HOL'', a stateless revision of the HOL Light kernel.
 In one sense, Mosquito is a clean-slate implementation of a Wiedijk-style HOL kernel, able to leverage Haskell's modern language features and rich library ecosystem.
 
 Yet, Mosquito is something more than a mere rehash of existing HOL implementations.
@@ -78,11 +80,11 @@ Further, our representation of tactics draws on inspiration from the Matita proo
 \section{Introduction}
 \label{sect.introduction}
 
-Mosquito is a minimalist, stateless, monadically-structured, largely-total, LCF-style implementation of higher-order logic (`HOL') written in Haskell.
+Mosquito is a minimalist, stateless, monadically-structured, largely-total, LCF-style implementation of higher-order logic (``HOL'') written in Haskell.
 We shall spend the next ten pages of this paper unpacking, and thereafter expanding, this sentence.
 
 Since the dawn of computer science as an independent subject in its own right computer scientists have attempted to make use of computers to help prove theorems, either purely mathematical in form, or related to the verification of pieces of software.
-Due to decidability issues with the varieties of logics most suitable for use in formalisation, so-called `interactive proof assistants', where human ingenuity is paired with brute-force automation and clever heuristics, are popular.
+Due to decidability issues with the varieties of logics most suitable for use in formalisation, so-called \emph{interactive proof assistants}, where human ingenuity is paired with brute-force automation and clever heuristics, are popular.
 
 Of critical concern, when developing an interactive proof assistant, is the question of \emph{trust}.
 How can users trust the resulting theorems generated by interactive proof assistants?
@@ -100,6 +102,9 @@ The
 \section{Kernel}
 \label{sect.kernel}
 
+We discuss some of the design decisions made in the implementation of the Mosquito kernel, and some of the particulars of the Mosquito-HOL logic.
+The meat of the Mosquito kernel---terms, types and primitive rules and theorems---is contained in a single Haskell source file, in \texttt{src/Mosquito/Kernel/Term.hs}.
+
 \subsection{Error handling}
 \label{subsect.error.handling}
 
@@ -111,16 +116,16 @@ Prevailing Haskell style, in contrast, favours the use of monads coupled with Ha
 \subsection{Terms and types}
 \label{subsect.terms.and.types}
 
-Mosquito types are simple types with top-level parametric polymorphism:
+Mosquito types (see \texttt{Type} in the Haskell implementation) are simple types with top-level parametric polymorphism:
 \begin{displaymath}
-\phi, \psi, \tau ::= \alpha \mid \tf{T}_\delta(\phi_1, \ldots, \phi_n)
+\phi, \phi', \psi, \tau, \ldots ::= \alpha \mid \tf{T}_\delta(\phi_1, \ldots, \phi_n)
 \end{displaymath}
 We use $\alpha$, $\beta$, $\gamma$, and so on, to range over \deffont{type variables}, represented concretely in the Haskell implementation with the \texttt{String} data type.
 We use $\tf{T}$, $\tf{T}'$, $\tf{T}''$, and so on, to range over arbitrary \deffont{type constructors}.
 We write $tv(-)$ for the set of type variables in a term, and write $\phi[\beta := \psi]$ for the substitution operation that replaces all occurrences of $\beta$ in $\phi$ with $\psi$.
 
-Type constructors are equipped with an \deffont{arity}, a natural number, and are always fully applied to a list of other types of length matching their arity.
-We use Haskell's abstraction mechanisms to enforce this.
+Type constructors are equipped with an \deffont{arity}, a natural number, and are always fully applied to a list of types of length matching their arity.
+We use Haskell's abstraction mechanisms and smart constructors to enforce this.
 All type constructors are tagged with a \deffont{type constructor description}.
 We use $\delta$, $\delta'$, and so on to range over type constructor descriptions.
 More on these later.
@@ -130,11 +135,11 @@ For ease of reading we write $Bool$ and $\phi \Rightarrow \psi$ for types constr
 We assume $- \Rightarrow -$ associates to the right.
 To maintain consistency, new type constructors may only be introduced using an exposed kernel function, which performs appropriate checks.
 
-Mosquito terms are $\lambda$-terms extended with constants:
+Mosquito terms (see \texttt{Term} in the Haskell implementation) are $\lambda$-terms extended with constants:
 \begin{displaymath}
-t, u, v ::= a^\phi \mid \tf{C}_\delta^\phi \mid tu \mid \lam{a{:}\phi}t
+t, t', u, v, \ldots ::= a^\phi \mid \tf{C}_\delta^\phi \mid tu \mid \lam{a{:}\phi}t
 \end{displaymath}
-We use $a$, $b$, $c$, and so on, to range over a countably infinite set of \deffont{variables}.
+We use $a$, $b$, $c$, and so on, to range over a countably infinite set of \deffont{variables}, represented concretely in the Haskell implementation with the \texttt{String} data type.
 We adopt a permutative convention, so $a$ and $b$ are always assumed to denote distinct variables.
 Variables are explicitly typed.
 
@@ -142,42 +147,39 @@ We use $\tf{C}$, $\tf{C}'$, $\tf{C}''$, and so on, to range over \deffont{consta
 Constants are explicitly typed and are tagged with a \deffont{constant description}.
 Overloading notation, we use $\delta$, $\delta'$, and so on, to range over constant descriptions.
 It will always be clear from context whether $\delta$ is a type operator description or a constant description.
+Again, more on these later.
 
 Mosquito has a single primitive constant, $\approx$, the equality constant of type $\alpha \rightarrow \alpha \rightarrow Bool$.
-For ease of reading we write a fully applied equality infix, styling $\approx t\ u$ as $t \approx u$.
+For ease of reading we write a fully applied equality infix, choosing to style $\approx t\ u$ as $t \approx u$.
 
 Application is assumed to associate to the left.
 We insert parentheses freely when doing so is deemed to increase legibility.
-We write $fv(-)$ for the usual set of free variables of a term.
+We write $fv(-)$ for the usual recursively-defined set of free variables of a term.
 We write $ftv(-)$ for the set of type variables appearing in the types of a term.
+Note that $tv(-)$ and $ftv(-)$ are distinct concepts.
 We write $t[\beta := \psi]$ for the substitution operation that replaces occurrences of $\beta$ in the types appearing in $t$ with $\psi$.
 
 We write $type(t) = \phi$ to denote that $t$ has type $\phi$.
 We refer to terms with propositional type (so $type(t) = Bool$) as \deffont{formulae}.
 Only type-checked terms may pass through the kernel.
 We enforce this using Haskell's abstraction mechanisms, combined with smart constructors of the form:
-\begin{displaymath}
-mkApp\ ::\ Term \rightarrow Term \rightarrow Inference\ Term
-\end{displaymath}
+\begin{lstlisting}
+mkApp :: Term $\rightarrow$ Term $\rightarrow$ Inference Term
+\end{lstlisting}
 \texttt{mkApp} is the only potentially failing smart constructor of this form, failing when the application would lead to a type correct term.
 
-Terms are deconstructed using exported functions of the form:
+Terms and types---both kept abstract---are deconstructed using exported functions of the form:
 \begin{displaymath}
 fromEquality\ ::\ Term \rightarrow Inference\ (Term, Term)
 \end{displaymath}
-The use of monads in deconstruction functions of this form leads to a relatively succinct programming style outside of the kernel:
-\begin{displaymath}
-\begin{aligned}
-foo\ concl = \mathbf{do} & \\
-    (l,\ r)            & \leftarrow fromEquality\ concl \\
-    (name,\ ty,\ lBody) & \leftarrow fromLam\ l \\
-    (\_,\   \_,\ rBody) & \leftarrow fromLam\ r \\
-    & ...
-\end{aligned}
-\end{displaymath}
-Failure to deconstruct \texttt{concl} results in the error being propagated throughout the rest of the function body by the error monad.
-An alternative approach would be to use view patterns, an extension implemented in the Glasgow Haskell Compiler (GHC), with proprietary views for deconstructing e.g. equalities.
-Due to a preference for avoiding Haskell language extensions within the kernel proper\footnote{The only GHC language extension used in the kernel being the relatively prosaic \texttt{DoAndIfThenElse}.} we have avoided this approach.
+These monadic deconstruction functions lead to a relatively succinct programming style outwith the kernel:
+\begin{lstlisting}[language=haskell]
+foo concl = do
+  (l, r)            $\leftarrow$ fromEquality concl
+  (name, ty, lBody) $\leftarrow$ fromLam l
+  ...
+\end{lstlisting}
+Failure to deconstruct \texttt{concl} results in the error being propagated throughout the rest of the function body by the \texttt{Inference} monad.
 
 \paragraph{Alpha-equivalence and fresh names}
 The native notion of equality on higher-order terms is $\alpha$-equivalence.
@@ -186,23 +188,23 @@ The Mosquito kernel implements an $\alpha$-equivalence test based on swappings o
 Write $(a\ b)$ for the function that sends $a$ to $b$ to $a$ and leaves all other $c$ fixed.
 Using $\pi$ to range arbitrarily over swappings, we extend this definition to a swapping action on terms $\pi \cdot t$:
 \begin{displaymath}
-\pi \cdot a \equiv \pi(a) \;\quad \pi \cdot \tf{C}_D \equiv \tf{C}_D \;\quad \pi \cdot tu \equiv (\pi \cdot t)(\pi \cdot u) \;\quad \pi \cdot \lam{a{:}\phi}t \equiv \lam{\pi(a){:}\phi}(\pi \act t)
+\pi \cdot a \equiv \pi(a) \;\quad \pi \cdot \tf{C}_\delta^\phi \equiv \tf{C}_\delta^\phi \;\quad \pi \cdot tu \equiv (\pi \cdot t)(\pi \cdot u) \;\quad \pi \cdot \lam{a{:}\phi}t \equiv \lam{\pi(a){:}\phi}(\pi \act t)
 \end{displaymath}
 Intuitively, this action commutes with the structure of a term, acting on any variable as it passes, evaporating on constants.
 Types remain fixed.
-With this, inductively define a notion of `$\alpha$-equivalence' using the following rules:
+With this, inductively define a notion of ``$\alpha$-equivalence'' using the following rules:
 \begin{gather*}
 \begin{prooftree}
 \phantom{h}
 \justifies
-a \aeq a
+a^\phi \aeq a^\phi
 \using\rulefont{{\aeq}a}
 \end{prooftree}
 \qquad
 \begin{prooftree}
 \phantom{h}
 \justifies
-\tf{C}_D \aeq \tf{C}_D
+\tf{C}_\delta^\phi \aeq \tf{C}_\delta^\phi
 \using\rulefont{{\aeq}\tf{C}}
 \end{prooftree}
 \qquad
@@ -229,7 +231,7 @@ t \aeq (b\ a) \act u \quad (a \not\in fv(u))
 \end{gather*}
 These rules define an equivalence relation, a fact that can be readily checked by a series of routine inductions on derivations.
 As the rules are syntax directed we obtain an algorithm for deciding equivalence by reading them backwards, easily implemented in Haskell.
-Taken together, these rules capture the essence of $\alpha$-equivalence with the rule \rulefont{{\aeq}{\lambda}b} corresponding to that notion's `bound variable names do not matter' characteristic.
+Taken together these rules capture the essence of $\alpha$-equivalence, with the rule \rulefont{{\aeq}{\lambda}b} corresponding to that notion's ``bound variable names do not matter'' characteristic.
 
 Why use swappings instead of the usual paper definition of $\alpha$-equivalence taken in terms of capture-avoiding substitution, or some other mechanism?
 In \rulefont{{\aeq}{\lambda}b} bound names are swapped in the bodies of the $\lambda$-abstractions.
@@ -244,55 +246,124 @@ t \aeq u[a := b] \quad (a \not\in fv(u))
 \end{prooftree}
 \end{displaymath}
 Here, the operation $u[a := b]$ may still require fresh name generation despite $a \not\in fv(u)$, should the term $u$ have a $\lambda$-bound occurrence of $a$ or $b$, for instance.
-With our equivalence test based on swappings, we may remove fresh name generation entirely from the kernel.
-This has some advantages, and also some implications for the design of the rest of the kernel:
+We provide some commentary on this swapping-based notion of $\alpha$-equivalence:
 \begin{enumerate}
 \item
-The size of the kernel is reduced.
-Fresh name generation is removed from trusted `kernel space' and placed in untrusted `user space'.
+The size of the kernel is reduced as functionality is removed from the kernel.
+Fresh name generation is placed in untrusted ``user space''.
 \item
-The user (or tactics) has control over how fresh names are generated.
+The user (or, being more realistic, tactics) has control over how fresh names are generated.
 Fresh name generation can be changed without affecting the trusted status of the kernel itself.
 Compare this to HOL Light, for example, where fresh name generation is a part of the kernel and cannot be changed.\footnote{For example, in the HOL Light distribution see the function \texttt{variant}, where fresh name generation takes place implicitly, and the function \texttt{vsubst} that performs a substitution on terms making use of this implicit renaming, in file \texttt{term.ml}. In the experimental kernel of the HOL4 distribution, see the function \texttt{subst}, where \texttt{genvar} is called, in the file \texttt{Term.sml}.}
 \item
 The design philosophy of the kernel inevitably follows a slightly different line from existing HOLs.
-For instance, capture avoiding substitution on terms in Mosquito's kernel is a potentially failing operation, with Haskell type
+For instance, capture avoiding substitution on terms in Mosquito's kernel is a potentially failing operation, with Haskell type:
 \begin{displaymath}
 termSubst\ ::\ String \rightarrow Term \rightarrow Term \rightarrow Inference\ Term
 \end{displaymath}
-failing if $\lambda$-bound variables are not sufficiently fresh for substitution to proceed.
-The Mosquito kernel therefore has a `verifying' character for more complex, and historically error-prone operations such as fresh name generation and capture-avoiding substitution.
+Term substitution fails if $\lambda$-bound variables are not sufficiently fresh for substitution to proceed.
+The user, or tactics, using this substitution primitive must ensure that names are sufficiently fresh before calling \texttt{termSubst}.
+The Mosquito kernel therefore has a ``verifying'' character for more complex---and historically error-prone operations---such as fresh name generation and capture-avoiding substitution.
 \end{enumerate}
 
 \subsection{Logic}
 \label{subsect.logic}
 
-\begin{figure}
+% introduction missing
+
+Use $\Gamma$ and $\Delta$ to range over finite sets of terms.
+We write $\{ \}$ for the empty set and $\{ t \}$ for a singleton set containing only $t$.
+We write $\Gamma \cup \Delta$ for the setwise union of $\Gamma$ and $\Delta$ and $\Gamma - t$ for the operation deleting $t$ from $\Gamma$.
+Both of these latter operations are taken modulo $\alpha$-equivalence.
+
+We write $\Gamma[\alpha := \phi]$ and $\Gamma[b := u]$ for the two sets $\{ t[\alpha := \phi] \mid t \in \Gamma \}$ and $\{ t[b := u] \mid t \in \Gamma \}$ respectively.
+With this
+
 \begin{gather*}
 \begin{prooftree}
 (t \aeq u)
 \justifies
-\emptyset \ent t = u
-\using\rulefont{alpha}
+\emptyset \ent t \approx u
+\using\rulefont{{\approx}alpha}
 \end{prooftree}
 \quad
 \begin{prooftree}
-\Gamma \ent t = u
+\Gamma \ent t \approx u
 \justifies
-\Gamma \ent u = t
-\using\rulefont{sym}
+\Gamma \ent u \approx t
+\using\rulefont{{\approx}sym}
 \end{prooftree}
 \quad
 \begin{prooftree}
-\Gamma \ent t = u \quad \Gamma \ent u = v
+\Gamma \ent t \approx u \quad \Gamma \ent u \approx v
 \justifies
-\Gamma \ent t = v
-\using\rulefont{trans}
+\Gamma \ent t \approx v
+\using\rulefont{{\approx}trans}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \ent t \approx t'
+\justifies
+\Gamma \ent \lam{a{:}\phi}t \approx \lam{a{:}\phi}t'
+\using\rulefont{{\approx}abs}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t \approx t' \quad \Delta \ent u \approx u'
+\justifies
+\Gamma \cup \Delta \ent tu \approx t'u'
+\using\rulefont{{\approx}comb}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+(typeof(t) = Bool)
+\justifies
+\{ t \} \ent t
+\using\rulefont{{\approx}assm}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u \quad \Delta \ent t
+\justifies
+\Gamma \cup \Delta \ent u
+\using\rulefont{{\approx}eqmp}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma - t \ent u \quad \Delta - u \ent t
+\justifies
+\Gamma \cup \Delta \ent t = u
+\using\rulefont{{\approx}antisym}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+(a \not\in fv(t))
+\justifies
+\{ \} \ent \lam{a{:}\phi}(ta) \approx t
+\using\rulefont{{\approx}eta}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\phantom{h}
+\justifies
+\{ \} \ent (\lam{a{:}\phi}t)u \approx t[a := u]
+\using\rulefont{{\approx}beta}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \ent t
+\justifies
+\Gamma[\alpha := \phi] \ent t[\alpha := \phi]
+\using\rulefont{{\approx}ty}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t
+\justifies
+\Gamma[b := u] \ent t[b := u]
+\using\rulefont{{\approx}trm}
 \end{prooftree}
 \end{gather*}
-\caption{Derivable equality in Mosquito HOL}
-\label{fig.derivable.equality}
-\end{figure}
 
 \section{Tactics}
 \label{sect.tactics}

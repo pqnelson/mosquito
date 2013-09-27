@@ -26,18 +26,19 @@ module Mosquito.Kernel.Term (
   boolQualifiedName, functionQualifiedName,
   boolDescription, functionDescription,
   -- * HOL types
-  Type,
+  Type, TypeView, typeView,
   isTyVar, isTyOperator, isFunction, isProposition,
   fromTyOperator, fromTyVar, fromFunction,
   mkTyVar, mkTyOperator,
-  alphaName, alphaType, boolType, mkFunctionType,
+  alphaName, alphaType, boolType,
+  mkFunctionType, FunctionView(..), functionView,
   -- * Constant descriptions
   ConstantDescription,
   isDefinedConstantDescription, isPrimitiveConstantDescription,
   constantDescriptionType, constantDescriptionQualifiedName, constantDescriptionDefinition,
   equalityType, equalityQualifiedName, equalityDescription,
   -- * HOL terms
-  Term,
+  Term, TermView(..), termView,
   mkVar, mkConst, mkApp, mkLam,
   isVar, isConst, isApp, isLam,
   fromVar, fromConst, fromApp, fromLam,
@@ -48,7 +49,8 @@ module Mosquito.Kernel.Term (
   -- ** Structural equality
   StructuralEquality, mkStructuralEquality,
   -- ** Equality within the logic
-  equality, isEquality, fromEquality, mkEquality,
+  equality, isEquality,
+  fromEquality, mkEquality, EqualityView(..), equalityView,
   -- ** Type substitutions
   typeSubst,
   -- ** Term substitutions
@@ -213,6 +215,20 @@ where
     | TyOperator TypeOperatorDescription [Type]
     deriving(Eq, Show, Ord)
 
+  -- |This is a `view type' for types, with all constructors of this type exported
+  --  outside of the kernel.  This allows you to pattern match on types, as long as
+  --  the @XViewPatterns@ language extension is enabled, outside of the kernel,
+  --  without sacrificing abstraction of the "Type" data type.  "Type"s must still be
+  --  built using the smart constructors.
+  data TypeView
+    = PTyVar String
+    | PTyOperator TypeOperatorDescription [TypeView]
+
+  -- |The transformation from "Type" to its view, "TypeView".
+  typeView :: Type -> TypeView
+  typeView (TyVar v)           = PTyVar v
+  typeView (TyOperator d args) = PTyOperator d $ map typeView args
+
   --
   -- ** Utility functions on types.
   --
@@ -237,31 +253,12 @@ where
   isProposition (TyOperator b []) = b == boolDescription
   isProposition _                 = False
 
-  -- |Deconstructs a type variable into its String component, failing
-  --  with an error message if the input Type is not a type variable
-  --  otherwise.
-  fromTyVar :: Type -> Inference String
-  fromTyVar (TyVar v) = return v
-  fromTyVar t         = fail $ "Type `" ++ pretty t ++ "' is not a type variable."
-
   -- |Deconstructs a type operator into its TypeOperatorDescription and
   --  [Type] components, failing with an error message if the input Type is
   --  not a type operator otherwise.
   fromTyOperator :: Type -> Inference (TypeOperatorDescription, [Type])
   fromTyOperator (TyOperator d args) = return (d, args)
   fromTyOperator t = fail $ "Type `" ++ pretty t ++ "' is not a type operator."
-
-  -- |Deconstructs a function type into its domain and range types, failing
-  --  with an error message if the input Type is not a function type otherwise.
-  fromFunction :: Type -> Inference (Type, Type)
-  fromFunction t@(TyOperator (PrimitiveTypeOperator f 2) [d, r])
-    | f == functionQualifiedName = return (d, r)
-    | otherwise                  = fail $ "Type `" ++ pretty t ++ "' is not a function type."
-  fromFunction t = fail $ "Type `" ++ pretty t ++ "' is not a function type."
-
-  -- |Makes a type variable from a String.
-  mkTyVar :: String -> Type
-  mkTyVar = TyVar
 
   -- |Makes a type operator from a TypeOperatorDescription and a list of
   --  Type.  Fails with an error message if the input list length differs
@@ -282,9 +279,9 @@ where
   -- |Collects the free type variables of a type (by definition, as we have
   --  no binding of type variables in types in Mosquito, all occurrences of
   --  type variables in a type are deemed free) into a Set.
-  ftv :: Type -> S.Set String
-  ftv (TyVar v)           = S.singleton v
-  ftv (TyOperator _ args) = L.foldr S.union S.empty $ map ftv args 
+  tv :: Type -> S.Set String
+  tv (TyVar v)           = S.singleton v
+  tv (TyOperator _ args) = L.foldr S.union S.empty $ map tv args 
 
   --
   -- ** Some basic types.
@@ -303,10 +300,45 @@ where
   boolType :: Type
   boolType = TyOperator boolDescription []
 
+  -- |Makes a type variable from a String.
+  mkTyVar :: String -> Type
+  mkTyVar = TyVar
+  
+  -- |Deconstructs a type variable into its String component, failing
+  --  with an error message if the input Type is not a type variable
+  --  otherwise.
+  fromTyVar :: Type -> Inference String
+  fromTyVar (TyVar v) = return v
+  fromTyVar t         = fail $ "Type `" ++ pretty t ++ "' is not a type variable."
+
   -- |Utility function for constructing a function type from two previously
   --  defined types.
   mkFunctionType :: Type -> Type -> Type
   mkFunctionType d r = TyOperator functionDescription [d, r]
+
+  -- |Deconstructs a function type into its domain and range types, failing
+  --  with an error message if the input Type is not a function type otherwise.
+  fromFunction :: Type -> Inference (Type, Type)
+  fromFunction t@(TyOperator (PrimitiveTypeOperator f 2) [d, r])
+    | f == functionQualifiedName = return (d, r)
+    | otherwise                  = fail $ "Type `" ++ pretty t ++ "' is not a function type."
+  fromFunction t = fail $ "Type `" ++ pretty t ++ "' is not a function type."
+
+  -- |This is a custom view for function types.  A type under this view is either
+  --  a function type, in which case we place the domain and range types of that
+  --  function into a constructor "Function", otherwise it is not.  Again, this is
+  --  fully exposed outside of the kernel so that we can do some neat pattern
+  --  matching without sacrificing abstraction.
+  data FunctionView
+    = Function Type Type
+    | NotFunction Type
+
+  -- |The transformation from "Type" to its custom view, "FunctionView".
+  functionView :: Type -> FunctionView
+  functionView phi =
+    case fromFunction phi of
+      Fail{}        -> NotFunction phi
+      Success(d, r) -> Function d r
 
   --
   -- ** Pretty printing types.
@@ -413,6 +445,24 @@ where
     | Lam   String Type Term
     deriving(Show, Ord)
 
+  -- |A view type for "Term", allowing users outside of the kernel to
+  --  pattern match on "Term" without sacrificing abstraction of the "Term"
+  --  data type.  Types are optional here because we plan to reuse this
+  --  view type during parsing, where we hope to convert between "TermView"
+  --  and "Term" after type inference.
+  data TermView
+    = PVar   String (Maybe Type)
+    | PConst ConstantDescription
+    | PApp   TermView TermView
+    | PLam   String (Maybe Type) TermView
+
+  -- |Transformation between "Term" and "TermView".
+  termView :: Term -> TermView
+  termView (Var v ty)      = PVar v $ Just ty
+  termView (Const c)       = PConst c
+  termView (App l r)       = PApp (termView l) (termView r)
+  termView (Lam nm ty bdy) = PLam nm (Just ty) (termView bdy)
+
   --
   -- * Utility functions on terms.
   --
@@ -507,6 +557,20 @@ where
     | otherwise                                                   = fail $ "Input term " ++ pretty t ++ " is not an equality."
   fromEquality t    = fail $ "Input term " ++ pretty t ++ " is not an equality."
 
+  -- |View type for equality.  A term is either an equality in this scheme, in
+  --  which case "Equality" holds the left and right hand sides of the equality
+  --  or it is something else, in which case "NotEquality" is returned.
+  data EqualityView
+    = Equality    Term Term
+    | NotEquality Term
+
+  -- |The view transformation between "Term" and "EqualityView".
+  equalityView :: Term -> EqualityView
+  equalityView t =
+    case fromEquality t of
+      Fail{}         -> NotEquality t
+      Success (l, r) -> Equality l r
+
   --
   -- * Type checking.
   --
@@ -559,45 +623,48 @@ where
   termTypeSubst dom rng (Lam a ty body) =
     Lam a (typeSubst dom rng ty) $ termTypeSubst dom rng body
 
-  -- |Performs a term substitution.  This function does **not** perform any
-  --  renaming of bound variables.  Should bound variables be not sufficiently
-  --  fresh, the function will return @Fail@.  You must rename to something
-  --  sufficiently fresh prior to using this function (i.e. by using @swap@.)
-  termSubst :: String -> Term -> Term -> Inference Term
-  termSubst dom rng (Var v ty)
-    | dom == v  = return rng
-    | otherwise = return $ Var v ty
-  termSubst _ _ (Const c) = return . Const $ c
-  termSubst dom rng (App l r) = do
-    nL <- termSubst dom rng l
-    nR <- termSubst dom rng r
-    return $ App nL nR
-  termSubst dom rng (Lam a ty body)
-    | a == dom =
-      fail . unwords $ [
-        "Bound variable and domain of substitution clash in"
-      , "`termSubst'."
-      ]
-    | a `S.member` fv rng =
-      fail . unwords $ [
-        "Bound variable in free variables of range of substitution"
-      , "in `termSubst'."
-      ]
-    | otherwise = do
-      nBody <- termSubst dom rng body
-      return $ Lam a ty nBody
+  fresh :: S.Set String -> String
+  fresh = go "f" 0
+    where
+      go :: String -> Integer -> S.Set String -> String
+      go suggested counter seen
+        | suggested `S.member` seen = go (suggested ++ show counter) (counter + 1) seen
+        | otherwise                 = suggested
 
+  -- |Performs a capture-avoiding term substitution with fresh-name generation
+  --  if necessary.
+  termSubst :: String -> Term -> Term -> Term
+  termSubst dom rng (Var v ty)
+    | dom == v  = rng
+    | otherwise = Var v ty
+  termSubst _ _ (Const c) = Const c
+  termSubst dom rng (App l r) = App (termSubst dom rng l) (termSubst dom rng r)
+  termSubst dom rng t@(Lam a ty body)
+    | a == dom || a `S.member` fv rng =
+      let freshName = fresh $ S.unions [S.singleton dom, variables rng, variables t] in
+        Lam freshName ty $ termSubst dom rng $ permute a freshName body
+    | otherwise = Lam a ty $ termSubst dom rng body
 
   --
   -- ** Alpha-equivalence on terms.
   --
 
+  -- |Collects all variables, including bound variables, appearing within
+  --  a term into a set.  Used for fresh name generation, where we do not
+  --  want any clashes of freshened bound variables with bound variables
+  --  existing under the binder.
+  variables :: Term -> S.Set String
+  variables (Var a _)     = S.singleton a
+  variables Const{}       = S.empty
+  variables (App l r)     = variables l `S.union` variables r
+  variables (Lam a _ bdy) = S.singleton a `S.union` variables bdy
+
   -- |Collects the free variables (i.e. variables appearing within a
   --  term not bound by a lambda-abstraction) into a Set.
   fv :: Term -> S.Set String
   fv (Var a _)     = S.singleton a
-  fv (Const _)      = S.empty
-  fv (App l r)      = fv l `S.union` fv r
+  fv (Const _)     = S.empty
+  fv (App l r)     = fv l `S.union` fv r
   fv (Lam a _ bdy) = a `S.delete` fv bdy
 
   -- |Collects the type variables appearing anywhere within a term
@@ -605,10 +672,10 @@ where
   --  are all decorated with types.  This function collects the type
   --  variables of those types into a Set.
   typeVars :: Term -> S.Set String
-  typeVars (Var _ ty)     = ftv ty
-  typeVars (Const d)      = ftv $ constantDescriptionType d
+  typeVars (Var _ ty)     = tv ty
+  typeVars (Const d)      = tv . constantDescriptionType $ d
   typeVars (App l r)      = typeVars l `S.union` typeVars r
-  typeVars (Lam _ ty bdy) = ftv ty `S.union` typeVars bdy
+  typeVars (Lam _ ty bdy) = tv ty `S.union` typeVars bdy
 
   -- |Collects the free variables of a list of terms into a Set.
   fvs :: (F.Foldable f, Functor f) => f Term -> S.Set String
@@ -881,8 +948,7 @@ where
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
-    nBody <- termSubst name b body
-    eq   <- mkEquality t nBody
+    eq   <- mkEquality t $ termSubst name b body
     return $ Theorem DerivedSafely ([], eq)
   beta t =
     fail . unwords $ [
@@ -921,10 +987,8 @@ where
     return $ Theorem p (map (termTypeSubst dom rng) hyps, termTypeSubst dom rng concl)
 
   instantiation :: String -> Term -> Theorem -> Inference Theorem
-  instantiation dom rng (Theorem p (hyps, concl)) = do
-    nHyps  <- mapM (termSubst dom rng) hyps
-    nConcl <- termSubst dom rng concl
-    return $ Theorem p (nHyps, nConcl)
+  instantiation dom rng (Theorem p (hyps, concl)) =
+    return $ Theorem p (map (termSubst dom rng) hyps, termSubst dom rng concl)
 
   --
   -- * Extending the logic
@@ -933,7 +997,7 @@ where
   primitiveNewDefinedConstant :: QualifiedName -> Term -> Type -> Inference (Term, Theorem)
   primitiveNewDefinedConstant name t typ =
     if fv t == S.empty then
-      if typeVars t `S.isSubsetOf` ftv typ then do
+      if typeVars t `S.isSubsetOf` tv typ then do
         let defined = mkConst $ DefinedConstant name typ t
         eq <- mkEquality defined t
         return (defined, Theorem DerivedSafely ([], eq))

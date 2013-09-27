@@ -9,7 +9,6 @@ where
   import Mosquito.Kernel.Term
 
   import Mosquito.ProofState.ProofState
-  import Mosquito.ProofState.Tacticals
 
   selectGoalTac :: Int -> Tactic
   selectGoalTac select =

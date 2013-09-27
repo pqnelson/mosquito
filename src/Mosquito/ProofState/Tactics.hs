@@ -5,7 +5,7 @@
 module Mosquito.ProofState.Tactics where
 
   import Prelude hiding (fail)
-
+  
   import Control.Arrow ((***))
 
   import Mosquito.DerivedRules
@@ -109,9 +109,9 @@ module Mosquito.ProofState.Tactics where
   transitivityPreTac :: TermPreTactic
   transitivityPreTac middle assms concl = do
     (left, right) <- fromEquality concl
-    left  <- mkEquality left middle
-    right <- mkEquality middle right
-    return $ Refine (\[t, t'] -> transitivity t t') [Open assms left, Open assms right]
+    nLeft  <- mkEquality left middle
+    nRight <- mkEquality middle right
+    return $ Refine (\[t, t'] -> transitivity t t') [Open assms nLeft, Open assms nRight]
 
   -- |Lifts @transitivityPreTac@ to a @Tactic@.
   transitivityTac :: TermTactic
@@ -123,14 +123,20 @@ module Mosquito.ProofState.Tactics where
 
   -- |Refines an equality goal, stripping lambda bound variables,
   --  creating a new equality goal between the two bodies of the
-  --  original goal.
+  --  original goal.  Checks whether the abstracted variables are
+  --  the same, if not performs a permutation to make them match.
   abstractPreTac :: PreTactic
   abstractPreTac assms concl = do
-    (l, r)            <- fromEquality concl
-    (name, ty, lBody) <- fromLam l
-    (_,     _, rBody) <- fromLam r
-    concl             <- mkEquality lBody rBody
-    return $ Refine (\[t] -> abstract name ty t) [Open assms concl]
+    (l, r)             <- fromEquality concl
+    (name,  ty, lBody) <- fromLam l
+    (name', _,  rBody) <- fromLam r
+    if name == name' then do
+      nConcl             <- mkEquality lBody rBody
+      return $ Refine (\[t] -> abstract name ty t) [Open assms nConcl]
+    else do
+      let nBody =  permute name name' rBody
+      nConcl    <- mkEquality lBody nBody
+      return $ Refine (\[t] -> abstract name ty t) [Open assms nConcl]
 
   -- | Lifts @abstractPreTac@ to a @Tactic@.
   abstractTac :: Tactic
@@ -145,9 +151,9 @@ module Mosquito.ProofState.Tactics where
     (left, right)    <- fromEquality concl
     (leftL, leftR)   <- fromApp left
     (rightL, rightR) <- fromApp right
-    left  <- mkEquality leftL rightL
-    right <- mkEquality leftR rightR
-    return $ Refine (\[t, t'] -> combine t t') [Open assms left, Open assms right]
+    nLeft            <- mkEquality leftL rightL
+    nRight           <- mkEquality leftR rightR
+    return $ Refine (\[t, t'] -> combine t t') [Open assms nLeft, Open assms nRight]
 
   combineTac :: Tactic
   combineTac = apply combinePreTac
@@ -213,12 +219,19 @@ module Mosquito.ProofState.Tactics where
   betaReduce :: Term -> Inference Term
   betaReduce t = do
     (left, right) <- fromApp t
-    (n, ty, body) <- fromLam left
-    body          <- termSubst n right body
-    return body
+    (n, _, body)  <- fromLam left
+    return $ termSubst n right body
+
+  betaReduces :: Term -> Inference Term
+  betaReduces t = do
+      nT <- betaReduce t
+      go nT
+    where
+      go :: Term -> Inference Term
+      go trm = inference (betaReduce trm) (const . return $ trm) go
 
   betaPreTac :: PreTactic
-  betaPreTac assms concl = do
+  betaPreTac _ concl = do
     (left, right) <- fromEquality concl
     reduced       <- betaReduce left
     if reduced == right then do
@@ -229,6 +242,19 @@ module Mosquito.ProofState.Tactics where
 
   betaTac :: Tactic
   betaTac = apply betaPreTac
+
+  betasPreTac :: PreTactic
+  betasPreTac _ concl = do
+    (left, right) <- fromEquality concl
+    reduced       <- betaReduces left
+    if reduced == right then do
+      thm <- betas left
+      return $ Refine (\[] -> return thm) []
+    else
+      fail "`betasPreTac'"
+
+  betasTac :: Tactic
+  betasTac = apply betasPreTac
 
   reductionPreTac :: PreTactic
   reductionPreTac assms concl = do
@@ -243,28 +269,11 @@ module Mosquito.ProofState.Tactics where
   --
 
   etaPreTac :: PreTactic
-  etaPreTac assms concl = do
-    (left, right) <- fromEquality concl
+  etaPreTac _ concl = do
+    (left, _) <- fromEquality concl
     --- XXX: test here
     thm <- eta left
     return $ Refine (\[] -> return thm) []
 
   etaTac :: Tactic
   etaTac = apply etaPreTac
-
-  --
-  -- ** Unfolding definitions
-  --
-
-  unfoldAppLTac :: TheoremTactic
-  unfoldAppLTac theorem = apply $ local theorem
-    where
-      local :: TheoremPreTactic
-      local theorem assms concl = do
-        (left, right)   <- fromEquality . conclusion $ theorem
-        (left', right') <- fromApp concl
-        if left == left' then do
-          guess <- mkApp right right'
-          equalityModusPonensPreTac guess assms concl
-        else
-          fail $ "unfoldAppLTac"

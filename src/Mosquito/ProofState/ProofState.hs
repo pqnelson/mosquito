@@ -5,6 +5,10 @@
 --  initial conjecture, applying pretactics to a proof state, and
 --  for retrieving a theorem from a complete backwards proof.
 module Mosquito.ProofState.ProofState (
+  -- * Proof state configurations
+  ProofStateConfiguration,
+  prettyPrint, showTypes, selectNewGoals,
+  defaultProofStateConfiguration,
   -- * Preliminary notions
   Tag,
   Justification, PreTactic, TermPreTactic, TheoremPreTactic,
@@ -18,7 +22,8 @@ module Mosquito.ProofState.ProofState (
   -- * Basic stackticals
   selectITac, selectPTac,
   -- * Conjecturing and refining in backwards proof
-  conjecture, apply, qed
+  conjecture, conjectureWithConfiguration,
+  apply, qed
 )
 where
 
@@ -33,6 +38,35 @@ where
   import Mosquito.Kernel.Term
 
   import Mosquito.Utility.Pretty
+
+  --
+  -- * Settings for proof status configuration
+  --
+
+  data ProofStateConfiguration
+    = ProofStateConfiguration {
+      _prettyPrint    :: Bool
+    , _showTypes      :: Bool
+    , _selectNewGoals :: Bool
+    } deriving (Eq)
+
+  mkLabels [''ProofStateConfiguration]
+
+  -- |The default proof state configuration, used in "conjecture".
+  defaultProofStateConfiguration :: ProofStateConfiguration
+  defaultProofStateConfiguration =
+    ProofStateConfiguration {
+      _prettyPrint    = True
+    , _showTypes      = True
+    , _selectNewGoals = True
+    }
+
+  -- |Returns a pretty printing or show function depending on the
+  --  configuration settings in "ProofStateConfiguration".
+  prettyConfig :: (Show a, Pretty a) => ProofStateConfiguration -> a -> String
+  prettyConfig config
+    | get prettyPrint config = pretty
+    | otherwise              = show
 
   --
   -- * Preliminary notions, and type synonyms for export.
@@ -90,7 +124,6 @@ where
   --  returns a @Tactic@.
   type TermTactic = Term -> Tactic
 
-
   --
   -- * The proof state proper
   --
@@ -108,6 +141,20 @@ where
     | Leaf Theorem
     | Node Justification [ProofTree]
 
+  instance Show ProofTree where
+    show (Hole tag assms concl) =
+      unwords [
+        "Hole", show tag, show assms, show concl
+      ]
+    show (Leaf theorem) =
+      unwords [
+        "Leaf", show theorem
+      ]
+    show (Node j children) =
+      unwords [
+        "Node", "Justification", show children
+      ]
+
   -- |Equality on a @ProofTree@ proceeds pointwise, ignoring
   --  @Justification@ functions which are incomparable.
   instance Eq ProofTree where
@@ -115,6 +162,7 @@ where
       tag == tag' && assms == assms' && concl == concl'
     (Leaf thm) == (Leaf thm') = thm == thm'
     (Node _ children) == (Node _ children') = children == children'
+    _ == _ = False
 
   -- |A @ProofState@ consists of the name of the current conjecture
   --  (just used for pretty printing the proof state), the initial
@@ -123,9 +171,10 @@ where
   --  corresponding to the incomplete proof state.
   data ProofState
     = ProofState {
-      _name       :: String,
-      _goal       :: Term,
-      _derivation :: ProofTree
+      _name          :: String
+    , _goal          :: Term
+    , _derivation    :: ProofTree
+    , _configuration :: ProofStateConfiguration
     } deriving (Eq)
 
   mkLabels [''ProofState]
@@ -190,11 +239,14 @@ where
   getPrettySelectedGoals :: ProofState -> [(Int, String)]
   getPrettySelectedGoals state = State.evalState (go $ get derivation state) 0
     where
+      config :: ProofStateConfiguration
+      config = get configuration state
+
       go :: ProofTree -> State.State Int [(Int, String)]
       go t@Hole{} = do
         index <- State.get
         State.modify (+ 1)
-        return . return $ (index, pretty t)
+        return . return $ (index, prettyConfig config t)
       go Leaf{} = return []
       go (Node _ children) = do
         mChildren <- State.mapM go children
@@ -209,29 +261,46 @@ where
   --  the goal state) and a @Term@.  The term must be Boolean-typed
   --  otherwise the function fails.  Otherwise, all being well, an
   --  initial @ProofState@ is created.  This is the only way of
-  --  creating an initial proof state.
-  conjecture :: String -> Term -> Inference ProofState
-  conjecture nm g = do
-    typeOfGoal <- typeOf g
+  --  creating an initial proof state.  A configuration argument is
+  --  passed to control how pretty printing, and other options, are
+  --  used.
+  conjectureWithConfiguration :: ProofStateConfiguration -> String -> Term -> Inference ProofState
+  conjectureWithConfiguration config nm goal = do
+    typeOfGoal <- typeOf goal
     if typeOfGoal == boolType then
       return $ ProofState {
-        _name       = nm,
-        _goal       = g,
-        _derivation = Hole Selected [] g
+        _name          = nm
+      , _goal          = goal
+      , _derivation    = Hole tag [] goal
+      , _configuration = config
       }
     else
       fail . unwords $ [
         "Cannot conjecture a term of non-boolean type.  Was expecting"
-      , unwords ["term: `", pretty g, "'to have type bool"]
+      , unwords ["term: `", prettyConfig config goal, "'to have type bool"]
       , unwords ["in conjecture `", nm, "'."]
       ]
+    where
+      tag :: Tag
+      tag =
+        if get selectNewGoals config then
+          Selected
+        else
+          Unselected
+
+  -- |Makes a conjecture with the default configuration.
+  conjecture :: String -> Term -> Inference ProofState
+  conjecture = conjectureWithConfiguration defaultProofStateConfiguration
 
   -- |Lifts a @PreTactic@ to a @Tactic@ by applying the pretactic to
   --  all selected open goals in a proof state.
   apply :: PreTactic -> Tactic
   apply pre status = do
-      tree <- go pre (get derivation status)
-      return $ set derivation tree status
+      tree <- go pre $ get derivation status
+      if tree == get derivation status then
+        fail "No change in `apply'."
+      else
+        return $ set derivation tree status
     where
 
       refineProofTree :: ProofStep -> Inference ProofTree
@@ -242,14 +311,21 @@ where
         trees <- mapM refineProofTree children
         return $ Node j trees
       refineProofTree (Open assms concl) =
-        return $ Hole Unselected assms concl
+        return $ Hole tag assms concl
+
+      tag :: Tag
+      tag =
+        if get selectNewGoals . get configuration $ status then
+          Selected
+        else
+          Unselected
 
       go :: PreTactic -> ProofTree -> Inference ProofTree
       go ptac prooftree =
         case prooftree of
-          t@(Hole Selected assms concl) ->
+          t@(Hole Selected assms concl) -> do
             case ptac assms concl of
-              Fail{}    -> return t
+              Fail err  -> return t
               Success r -> refineProofTree r
           Hole{}                        -> return prooftree
           Leaf{}                        -> return prooftree
@@ -274,16 +350,19 @@ where
       else
         fail . unwords $ [
           "The proof cannot be completed because the initial"
-        , unwords ["goal `", pretty (get goal status), "' does not"]
+        , unwords ["goal `", prettyConfig config (get goal status), "' does not"]
         , "match the conclusion of the generated theorem derived"
-        , unwords ["from the proof: `", pretty (conclusion thm), "'."]
+        , unwords ["from the proof: `", prettyConfig config (conclusion thm), "'."]
         ]
     else
       fail . unwords $ [
         "Cannot `qed' an incomplete derivation, when attempting to"
-      , unwords ["complete proof of `", pretty (get goal status), "'."]
+      , unwords ["complete proof of `", prettyConfig config (get goal status), "'."]
       ]
     where
+      config :: ProofStateConfiguration
+      config = get configuration status
+
       go :: ProofTree -> Inference Theorem
       go Hole{}     =
         fail . unwords $ [
@@ -300,32 +379,33 @@ where
   --
 
   -- |Selects goals based on a predicate on the list of
-  --  assumptions and term corresponding to a goal.
+  --  assumptions and term corresponding to a goal.  All goals
+  --  failing the test are marked unselected.
   selectPTac :: ([Theorem] -> Term -> Bool) -> Tactic
   selectPTac p = return . modify derivation walk
     where
       walk :: ProofTree -> ProofTree
       walk (Hole tag assms concl)
-        | p assms concl      = Hole Selected assms concl
-        | otherwise          = Hole tag assms concl
+        | p assms concl      = Hole Selected   assms concl
+        | otherwise          = Hole Unselected assms concl
       walk (Node j children) =
         Node j $ map walk children
       walk (Leaf thm)        = Leaf thm
 
   -- |Selects goals based on a predicate on the number of
-  --  a goal.
+  --  a goal.  All goals failing the test are marked as unselected.
   selectITac :: (Int -> Bool) -> Tactic
-  selectITac p = return . modify derivation (\d -> State.evalState (walk d) 0)
+  selectITac p = return . modify derivation ((flip State.evalState) 0 . walk)
     where
       walk :: ProofTree -> State.State Int ProofTree
       walk (Hole tag assms concl) = do
         index <- State.get
         State.modify (+ 1)
         if p index then
-          return $ Hole Selected assms concl
+          return $ Hole Selected   assms concl
         else
-          return $ Hole tag assms concl
-      walk (Leaf theorem) = return $ Leaf theorem
+          return $ Hole Unselected assms concl
+      walk (Leaf theorem) = return . Leaf $ theorem
       walk (Node j children) = do
         mChildren <- mapM walk children
         return $ Node j mChildren

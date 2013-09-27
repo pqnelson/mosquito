@@ -1,3 +1,5 @@
+{-# LANGUAGE ViewPatterns #-}
+
 -- |Derived, useful theorems --- direct consequences of the primitive inference
 --  rules defined in the kernel.
 module Mosquito.DerivedRules (
@@ -6,17 +8,26 @@ module Mosquito.DerivedRules (
   -- * Restricted combination rules
   combineL, combineR,
   -- * Lambda-abstraction
-  abstracts
+  abstracts,
+  -- * Substitutions
+  instantiations, typeInstantiations,
+  -- * Reductions
+  betas
 ) where
 
   import Prelude hiding (fail)
 
+  import Mosquito.TermUtilities
+
   import Mosquito.Kernel.Term
+
+  -- import Mosquito.Utility.Pretty    
 
   --
   -- * Derived rules
   --
 
+  -- |Produces a derivation of @Gamma ⊢ t = t@ given @t@.
   reflexivity :: Term -> Inference Theorem
   reflexivity t = alpha t t
 
@@ -34,8 +45,39 @@ module Mosquito.DerivedRules (
     eq <- reflexivity t
     combine thm eq
 
-  -- |Produces a derivation of @Gamma ⊢ λx1:ty1 ... λxn:tyn. t = λy1:ty'1 ... λyn:ty'n. u@
-  --  from a derivation of @Gamma ⊢ t = u@.
+  -- |Generalised for of "abstract", performing many abstractions one after
+  --  the other.
   abstracts :: [(String, Type)] -> Theorem -> Inference Theorem
   abstracts xs thm =
-    foldr (\(name, ty) -> (>> abstract name ty thm)) (return thm) xs
+    foldr (\(name, ty) prev -> do
+      nPrev <- prev
+      abstract name ty nPrev) (return thm) xs
+
+  -- |Generalised for of "instantiation", performing many instantiations one
+  --  after the other.
+  instantiations :: [(String, Term)] -> Theorem -> Inference Theorem
+  instantiations subst thm =
+    foldr (\(name, ty) prev -> do
+      nPrev <- prev
+      instantiation name ty nPrev) (return thm) subst
+
+  -- |Generalised for of "typeInstantiation", performing many type instantiations
+  --  one after the other.
+  typeInstantiations :: [(String, Type)] -> Theorem -> Inference Theorem
+  typeInstantiations subst thm =
+    foldr (\(name, ty) prev -> do
+      nPrev <- prev
+      typeInstantiation name ty nPrev) (return thm) subst
+
+  betas :: Term -> Inference Theorem
+  betas = go . unfoldAppsL
+    where
+      go :: [Term] -> Inference Theorem
+      go []         = fail "`betas'"
+      go [x]        = reflexivity x
+      go (x:xs:xss) = do
+        app        <- mkApp x xs
+        b          <- beta app
+        (_, r)     <- fromEquality . conclusion $ b
+        tl         <- go $ r:xss
+        transitivity b tl
