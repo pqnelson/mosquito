@@ -150,7 +150,7 @@ where
       unwords [
         "Leaf", show theorem
       ]
-    show (Node j children) =
+    show (Node _ children) =
       unwords [
         "Node", "Justification", show children
       ]
@@ -324,9 +324,9 @@ where
       go ptac prooftree =
         case prooftree of
           t@(Hole Selected assms concl) -> do
-            case ptac assms concl of
-              Fail err  -> return t
-              Success r -> refineProofTree r
+            inference (ptac assms concl)
+              (const . return $ t)
+              refineProofTree
           Hole{}                        -> return prooftree
           Leaf{}                        -> return prooftree
           (Node j children)             -> do
@@ -385,7 +385,7 @@ where
   selectPTac p = return . modify derivation walk
     where
       walk :: ProofTree -> ProofTree
-      walk (Hole tag assms concl)
+      walk (Hole _ assms concl)
         | p assms concl      = Hole Selected   assms concl
         | otherwise          = Hole Unselected assms concl
       walk (Node j children) =
@@ -398,7 +398,7 @@ where
   selectITac p = return . modify derivation ((flip State.evalState) 0 . walk)
     where
       walk :: ProofTree -> State.State Int ProofTree
-      walk (Hole tag assms concl) = do
+      walk (Hole _ assms concl) = do
         index <- State.get
         State.modify (+ 1)
         if p index then

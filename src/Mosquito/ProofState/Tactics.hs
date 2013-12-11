@@ -24,7 +24,7 @@ module Mosquito.ProofState.Tactics where
 
   -- |Tactic that fails immediately with a supplied message.
   failWithMessageTac :: String -> Tactic
-  failWithMessageTac = const . Fail
+  failWithMessageTac = const . fail
 
   -- |Tactic that doesn't acts as the identity function, making
   --  no changes to the state.
@@ -46,6 +46,13 @@ module Mosquito.ProofState.Tactics where
   -- |Lifts @solvePreTac@ to a @Tactic@.
   solveTac :: TheoremTactic
   solveTac = apply . solvePreTac
+
+  -- |Allows a mixture of forward and backward reasoning in a backward
+  --  directed proof.  A thin wrapper around "solveTac".
+  forwardTac :: Inference Theorem -> Tactic
+  forwardTac thm status = do
+    thm <- thm
+    solveTac thm status
 
   --
   -- ** Reflexivity
@@ -222,14 +229,6 @@ module Mosquito.ProofState.Tactics where
     (n, _, body)  <- fromLam left
     return $ termSubst n right body
 
-  betaReduces :: Term -> Inference Term
-  betaReduces t = do
-      nT <- betaReduce t
-      go nT
-    where
-      go :: Term -> Inference Term
-      go trm = inference (betaReduce trm) (const . return $ trm) go
-
   betaPreTac :: PreTactic
   betaPreTac _ concl = do
     (left, right) <- fromEquality concl
@@ -242,27 +241,6 @@ module Mosquito.ProofState.Tactics where
 
   betaTac :: Tactic
   betaTac = apply betaPreTac
-
-  betasPreTac :: PreTactic
-  betasPreTac _ concl = do
-    (left, right) <- fromEquality concl
-    reduced       <- betaReduces left
-    if reduced == right then do
-      thm <- betas left
-      return $ Refine (\[] -> return thm) []
-    else
-      fail "`betasPreTac'"
-
-  betasTac :: Tactic
-  betasTac = apply betasPreTac
-
-  reductionPreTac :: PreTactic
-  reductionPreTac assms concl = do
-    reduced <- betaReduce concl
-    equalityModusPonensPreTac reduced assms concl
-
-  reductionTac :: Tactic
-  reductionTac = apply reductionPreTac
 
   --
   -- ** Eta equivalence
@@ -277,3 +255,17 @@ module Mosquito.ProofState.Tactics where
 
   etaTac :: Tactic
   etaTac = apply etaPreTac
+
+  --
+  -- ** Conversions and conversion tactics.
+  --
+
+  -- |A conversion maps a term @t@ to a theorem @|- t = u@ for some other
+  --  term @u@.
+  type Conversion = Term -> Inference Theorem
+
+  type ConversionPreTactic = Conversion -> PreTactic
+  type ConversionTactic = Conversion -> Tactic
+
+  conversionPreTac :: ConversionPreTactic
+  conversionPreTac conversion assms concl = undefined

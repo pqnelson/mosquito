@@ -2,19 +2,22 @@
 
 module Mosquito.ProofState.Unfolding where
 
-  import Prelude hiding (fail)
+  import Prelude hiding (fail, repeat)
+
+  import Control.Monad hiding (fail)
 
   import Mosquito.Kernel.Term
 
+  import Mosquito.ProofState.Automation
   import Mosquito.ProofState.ProofState
   import Mosquito.ProofState.Tactics
+  import Mosquito.ProofState.Tacticals
 
-  --
-  -- * Unfolding definitions
-  --
-
+  -- |Unfolds a definition supplied as a theorem and then immediately solves
+  --  extraneous subgoals, changing the goal to prove into the original goal
+  --  with the constant unfolded.
   unfoldTac :: TheoremTactic
-  unfoldTac theorem = apply local
+  unfoldTac theorem = apply local >=> pointwiseTac >=> (try $ autoSolve theorem)
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =
@@ -48,3 +51,18 @@ module Mosquito.ProofState.Unfolding where
           equalityModusPonensPreTac guess assms concl
         else
           fail "`unfoldTac'"
+
+  -- |Decompose an equality between terms into equalities between subterms,
+  --  solving easy goals with automation.
+  pointwiseTac :: Tactic
+  pointwiseTac = repeat (abstractTac <|> combineTac) >=> try autoBase
+
+  -- |Performs a beta-reduction of the goal, immediately closing extraneous
+  --  subgoals with automation.
+  reductionPreTac :: PreTactic
+  reductionPreTac assms concl = do
+    reduced <- betaReduce concl
+    equalityModusPonensPreTac reduced assms concl
+
+  reductionTac :: Tactic
+  reductionTac = repeat $ apply reductionPreTac >=> autoBase

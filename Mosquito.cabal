@@ -53,10 +53,14 @@ library
                        Mosquito.DerivedRules
                        Mosquito.Theories.Theory
                        Mosquito.Theories.Bool
+                       Mosquito.ProofState.Automation
+                       Mosquito.ProofState.Conversions
                        Mosquito.ProofState.ProofState
                        Mosquito.ProofState.Tactics
                        Mosquito.ProofState.Stacktics
+                       Mosquito.ProofState.Unfolding
                        Mosquito.Utility.Pretty
+                       Mosquito.TermUtilities
   
   -- Modules included in this library but not exported.
   -- other-modules:       

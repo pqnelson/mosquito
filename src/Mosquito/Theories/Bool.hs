@@ -10,7 +10,6 @@ module Mosquito.Theories.Bool where
   import Mosquito.Kernel.QualifiedName
 
   import Mosquito.DerivedRules
-  import Mosquito.Parsing
 
   import Mosquito.ProofState.Automation
   import Mosquito.ProofState.ProofState
@@ -36,8 +35,7 @@ module Mosquito.Theories.Bool where
 
   binaryConnectiveType :: Type
   binaryConnectiveType =
-    let Success t = runParser (parseType kernelTypeParsingInfo) "_→_ Bool (_→_ Bool Bool)" in
-      t
+    mkFunctionType boolType (mkFunctionType boolType boolType)
 
   quantifierType :: Type
   quantifierType = mkFunctionType (mkFunctionType alphaType boolType) boolType
@@ -72,17 +70,12 @@ module Mosquito.Theories.Bool where
   -- |Produces a derivation of @{} ⊢ true@.
   trueI :: Inference Theorem
   trueI = do
-    let a =  mkVar "a" boolType
-    let t =  mkLam "a" boolType a
-    eq    <- mkEquality t t
     trueC <- trueC
     trueD <- trueD
     conj  <- conjecture "true-intro" trueC
     conj  <-
       by [
         unfoldTac trueD
-      , try autoBase
-      , autoSolve trueD
       ] conj
     qed conj
 
@@ -142,7 +135,7 @@ module Mosquito.Theories.Bool where
       fail "`trueEqITac'"
 
   trueEqITac :: Tactic
-  trueEqITac = apply trueEqIPreTac
+  trueEqITac = apply trueEqIPreTac <|> (symmetryTac >=> apply trueEqIPreTac)
 
   --
   -- ** Universal quantification
@@ -171,8 +164,8 @@ module Mosquito.Theories.Bool where
     let lam  =  mkLam name ty body
     mkApp inst lam
 
-  -- reflexivityThm :: Inference Theorem
-  reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
+  reflexivityThm :: Inference Theorem
+  reflexivityThm = do
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
     refl    <- reflexivity t
@@ -183,12 +176,9 @@ module Mosquito.Theories.Bool where
     prf     <-
       by [
         unfoldTac forallD
-      , try combineTac
-      , autoBase
-      , autoSolve forallD
       , reductionTac
       , abstractTac
-      , try trueEqITac
+      , trueEqITac
       , autoBase
       ] prf
     qed prf
@@ -215,6 +205,7 @@ module Mosquito.Theories.Bool where
   --
   -- ** Conjunction
   --
+
   conjunctionDecl :: Inference (Term, Theorem)
   conjunctionDecl = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "_∧_"
@@ -243,54 +234,52 @@ module Mosquito.Theories.Bool where
     mkApp pre right
 
   -- conjunctionI :: Inference Theorem
-  conjunctionI = Mosquito.Utility.Pretty.putStrLn $ do
+  conjunctionIThm left right = do
+      trueC        <- trueC
+      conjunctionD <- conjunctionD
+      preApp       <- mkApp f (conclusion left)
+      app          <- mkApp preApp (conclusion right)
+      preApp'      <- mkApp f trueC
+      app'         <- mkApp preApp' trueC
+      eq           <- mkEquality (mkLam "f" binaryConnectiveType app) (mkLam "f" binaryConnectiveType app')
+      conj         <- mkConjunction (conclusion left) (conclusion right)
+      prf          <- conjecture "conjunction-introduction" conj
+      prf <-
+        by [
+          unfoldTac conjunctionD
+        , equalityModusPonensTac eq
+        , try pointwiseTac
+        , try trueEqITac
+        , symmetryTac
+        , try beta2Tac
+        , try betaTac
+        , try (reductionTac >=> pointwiseTac)
+        , try (symmetryTac >=> trueEqITac)
+        , repeat (solveTac left <|> solveTac right)
+        ] prf
+      qed prf
+    where
+      beta2PreTac :: PreTactic
+      beta2PreTac assms concl = do
+        (left, right) <- fromEquality concl
+        (app, arg)    <- fromApp left
+        app'          <- betaReduce app
+        trm           <- mkApp app' arg
+        new           <- mkEquality trm right
+        return $ Refine (\[t, t'] -> equalityModusPonens t t') [Open assms trm, Open assms new]
+
+      beta2Tac :: Tactic
+      beta2Tac = apply beta2PreTac
+
+      f :: Term
+      f = mkVar "f" binaryConnectiveType
+
+  test = Mosquito.Utility.Pretty.putStrLn $ do
     let p = mkVar "p" boolType
     let q = mkVar "q" boolType
-    let f = mkVar "f" binaryConnectiveType
-    preApp <- mkApp f p
-    app    <- mkApp preApp q
-    let left = mkLam "f" binaryConnectiveType app
-    trueC <- trueC
-    preApp' <- mkApp f trueC
-    app' <- mkApp preApp' trueC
-    let right = mkLam "f" binaryConnectiveType app'
-    eq <- mkEquality left right
-    conjunctionD <- conjunctionD
-    (_, conjDef) <- fromEquality . conclusion $ conjunctionD
-    eqmp'        <- mkApp conjDef p
-    eqmp         <- mkApp eqmp' q
-    conj         <- mkConjunction p q
-    prf   <- conjecture "conjunctionI" conj
-    prf   <-
-      by [
-        unfoldTac conjunctionD
-      , try . repeat $ combineTac >=> autoBase
-      , try . autoSolve $ conjunctionD
-      , equalityModusPonensTac eq
-      , selectGoalTac 1
-      , abstractTac
-      , repeat $ combineTac >=> trueEqITac
-      , try autoBase
-      , selectGoalTac 0
-      {-
-        selectGoalTac 0 >=> unfoldTac conjunctionD
-      , selectGoalTac 0 >=> combineTac
-      , selectAllGoalsTac >=> try alphaTac
-      , selectGoalTac 0 >=> symmetryTac
-      , selectGoalTac 0 >=> solveTac conjunctionD
-      , selectGoalTac 0 >=> reductionTac
-      , selectGoalTac 0 >=> equalityModusPonensTac eq
-      , selectGoalTac 1 >=> abstractTac
-      , selectGoalTac 1 >=> combineTac
-      , selectGoalTac 2 >=> trueEqITac
-      , selectGoalTac 1 >=> combineTac
-      , selectGoalTac 2 >=> trueEqITac
-      , selectGoalTac 1 >=> alphaTac
-      , selectGoalTac 0 >=> symmetryTac
-      , selectGoalTac 0 >=> betasTac
-      -}
-      ] prf
-    return prf
+    pRefl <- alpha p p
+    qRefl <- alpha q q
+    conjunctionIThm pRefl qRefl
 
   --
   -- ** Implication
@@ -317,6 +306,20 @@ module Mosquito.Theories.Bool where
     implicationC <- implicationC
     pre          <- mkApp implicationC left
     mkApp pre right
+
+  pImpliesPThm = Mosquito.Utility.Pretty.putStrLn $ do
+      imp  <- mkImplication p p
+      conj <- mkForall "p" boolType imp
+      prf  <- conjecture "p-implies-p" conj
+      forallD <- forallD
+      prf  <-
+        by [
+          unfoldTac forallD
+        ] prf
+      return prf
+    where
+      p :: Term
+      p = mkVar "p" boolType
 
   --
   -- ** Negation

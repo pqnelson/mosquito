@@ -46,9 +46,9 @@ where
   --  returned, otherwise the result of the first is returned.
   (<|>) :: Tactic -> Tactic -> Tactic
   (<|>) l r state =
-    case l state of
-      Fail{} -> r state
-      Success lState -> return lState
+    inference (l state)
+      (const . r $ state)
+      return
 
   -- |Boolean conditional application, applies the first tactic
   --  if the first argument is @True@, otherwise applies the
@@ -83,10 +83,10 @@ where
   -- |Repeat application of a tactic indefinitely, returning the last
   --  status upon which the application was successful.
   repeat :: Tactic -> Tactic
-  repeat t status =
-    case t status of
-      Fail err  -> return status
-      Success s -> repeat t s
+  repeat tactic state =
+    inference (tactic state)
+      (const . return $ state)
+      (repeat tactic)
 
   --
   -- * Failure
@@ -97,6 +97,6 @@ where
   --  otherwise returns the updated state.
   try :: Tactic -> Tactic
   try tactic state =
-    case tactic state of
-      Fail{}    -> return state
-      Success s -> return s
+    inference (tactic state)
+      (const . return $ state)
+      return
