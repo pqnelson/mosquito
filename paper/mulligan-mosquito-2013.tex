@@ -74,24 +74,101 @@ We discuss details of the logic implemented, the kernel design and proof state a
 We present some simple tactic-guided backwards proofs of conjectures over the Booleans in the system.
 \end{abstract}
 
-\section{Introduction}
-\label{sect.introduction}
-
-\mosquito is an implementation of higher-order logic (HOL) written in Haskell.
-
+\mosquito is an LCF-style implementation of higher-order logic (HOL) written in Haskell.
+\mosquito's kernel consists of 1000 lines of commented Haskell.
+Some infrastructure such as proof state representations and tactics are built atop this.
+More is in development.
+\paragraph{Writing a HOL in Haskell}
 Existing LCF-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009} and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
-When extending the logic with new constant definitions, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, an inconsistency occur by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\mathtt{0 = 1}$ by transitivity and symmetry of equality.
-This, in the systems mentioned above, is managed by a stateful kernel wherein an imperative database of existing constant names is maintained thus preventing the redefinition of existing constants.
+When extending the logic with new constant definitions, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\mathtt{0 = 1}$ by transitivity and symmetry of equality.
+This, in the systems mentioned above, is managed by a stateful kernel wherein a mutable database of existing constant names is maintained.
+The redefinition of existing constants is therefore avoided.
 
-Prevailing programming style within the Haskell community tends to avoid the use of imperative update and maintenance of implicit state, where possible.
-Rather, explicit state tends to be passed around, with a monadic style of programming used to assuage the pain associated with such a programming style.
+Prevailing Haskell programming style tends to avoid the use of imperative update and maintenance of implicit state, whenever possible.
+Rather, explicit state tends to be passed around, with a monadic style of programming adopted to assuage the pain of explicit state passing.
 However, a na\"ive translation of an existing LCF-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system.
-A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it much more cumbersome to use than the kernels of existing systems.
+A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
 
 As Wiedijk noted, there is a simpler method for writing a stateless HOL kernel, which we adopt in \mosquito.
 Constants can be represented as a compound type consisting of their name as well as their definition, rather than simply their name as in e.g. HOL Light.
 A constant $\mathtt{C}$ is now only equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition.
 Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ now no longer entails that a deduction of $\mathtt{0 = 1}$ is possible, and consistency is therefore retained without appeal to explicit state passing.
+
+\begin{figure}
+\begin{gather*}
+\begin{prooftree}
+(t \aeq u)
+\justifies
+\{\} \vdash t = u
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t = u
+\justifies
+\Gamma \vdash u = t
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t = u \quad \Delta \vdash u = v
+\justifies
+\Gamma \cup \Delta \vdash t = v
+\end{prooftree}
+\quad
+\begin{prooftree}
+(t : \mathtt{Bool})
+\justifies
+\{ t \} \vdash t
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t \quad \Delta \vdash u
+\justifies
+(\Gamma - u) \cup (\Delta - t) \vdash t = u
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \vdash t = u
+\justifies
+\Gamma \vdash \lam{a{:}\phi}t = \lam{a{:}\phi}u
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t = u \quad \Delta \vdash v = w
+\justifies
+\Gamma \cup \Delta \vdash t \cdot v = u \cdot w
+\end{prooftree}
+\quad
+\begin{prooftree}
+\phantom{h}
+\justifies
+\{\} \vdash \lam{a{:}\phi}t \cdot u = t[a := u]
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+(a \not\in fv(t))
+\justifies
+\{\} \vdash \lam{a{:}\phi}(t \cdot a) = t
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t
+\justifies
+\Gamma[b := u] \vdash t[b := u]
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \vdash t
+\justifies
+\Gamma[\alpha := \phi] \vdash t[\alpha := \phi]
+\end{prooftree}
+\end{gather*}
+\caption{Inference rules for \mosquito's logic}
+\label{fig.rules}
+\end{figure}
+
+\paragraph{\mosquito's logic}
+The basic axioms and rules of \mosquito's logic are described in Figure~\ref{fig.rules}.
+
 \paragraph{Why develop another HOL?}
 \mosquito was originally conceived as a kernel suitable for machine formalisation.
 To a certain extent, that prototype got out of hand, and we started developing machinery atop the kernel, such as tactics, tacticals, and proof state representations, that surpassed our original intentions.
@@ -118,106 +195,75 @@ To the best of our knowledge, \mosquito is the first implementation of vanilla H
 \section{Tactics and the proof state}
 \label{sect.tactics.proof.state}
 
-\subsection{The proof state}
-\label{subsect.proof.state}
-
-\mosquito supports both \emph{forward} and \emph{backward} proof styles.
-Forward proof is supported via direct construction of elements of the $\mathtt{Theorem}$ data type, using the basic axioms of higher-order logic implemented in the \mosquito kernel.
-Backwards proof is supported via \emph{tactics}, and a notion of \emph{proof state} which captures the possibly incomplete derivation of some conjecture.
-
-Unlike other proof assistants in the HOL family---e.g. HOL Light---a concrete tree is used to represent the current incomplete derivation, rather than a stack of goals:
-\begin{lstlisting}
-data ProofTree
-  = Hole Tag [Theorem] Term
-  | Leaf Theorem
-  | Node Justification [ProofTree]
-\end{lstlisting}
-Here, we use the $\mathtt{Hole}$ constructor to represent goals left to prove.
-Goals are `tagged' as being either \emph{selected} or \emph{unselected}.
-Each $\mathtt{Hole}$ has a list of assumptions, represented as elements of the $\mathtt{Theorem}$ data type, plus the goal term to be proved.
-
-We use the $\mathtt{Leaf}$ constructor to represent goals that have been closed outright with the use of a theorem.
-We use the $\mathtt{Node}$ constructor to represent goals that have been \emph{refined} into simpler subgoals using a tactic.
-A $\mathtt{Node}$ is equipped with a $\mathtt{Justification}$ function, of type:
-\begin{lstlisting}
-type Justification = [Theorem] $\rightarrow$ Inference Theorem
-\end{lstlisting}
-Intuitively, a $\mathtt{Justification}$
-
-\begin{lstlisting}
-data ProofState = ProofState { goal :: Term, tree :: ProofTree, ... }
-\end{lstlisting}
-
-\begin{lstlisting}
-conjecture :: String $\rightarrow$ Term $\rightarrow$ Inference ProofState
-conjecture = ...
-\end{lstlisting}
-
-\begin{lstlisting}
-qed :: ProofState $\rightarrow$ Inference Theorem
-qed = ...
-\end{lstlisting}
-
-\begin{lstlisting}
-apply :: PreTactic $\rightarrow$ Tactic
-apply = ...
-\end{lstlisting}
-
 \subsection{Tactics, tacticals and stackticals}
 \label{subsect.tactics.tacticals.modifying.proof.state}
 
-\mosquito tactics are developed in two stages.
-A $\mathtt{PreTactic}$ is a function of type:
+\section{Example forward and backward proof}
+\label{subsect.example.forward.backward.proof}
+
+We present a simple example of forwards and backwards proof in the system being used together to prove a simple conjecture.
+
+Let $\top$ be defined at type $\mathtt{Bool}$ as $\lam{b{:}\mathtt{Bool}}b = \lam{b{:}\mathtt{Bool}}b$.
+Let the universal quantifier $\forall$ be defined at type $(\alpha \rightarrow \mathtt{Bool}) \rightarrow \mathtt{Bool}$ as $\forall = \lam{P{:}\alpha \rightarrow \mathtt{Bool}}(P = \lam{a:{\alpha}}\top)$.
+Let $\mathtt{trueC}$ refer to the constant $\top$ and $\mathtt{trueD}$ refer to the defining theorem $\vdash \top = \lam{b{:}\mathtt{Bool}}b = \lam{b{:}\mathtt{Bool}}b$.
+Likewise with universal quantification and the (Haskell) constants $\mathtt{forallC}$ and $\mathtt{forallD}$.
+
+We ultimately aim to show that $\vdash \forall{t{:}\alpha}. t = t$.
+Note this is different from the primitive HOL \rulefont{refl} rule implemented in the \mosquito kernel.
+
+We first show that given $\Gamma \vdash p$ we can derive $\Gamma \vdash p = \top$.
+We do this in a forward proof style, building a derivation by direct appeal to the basic HOL axioms and rules implemented in the \mosquito system:
 \begin{lstlisting}
-type PreTactic = [Theorem] $\rightarrow$ Term $\rightarrow$ Inference ProofStep
+trueEqI :: Theorem $\rightarrow$ Inference Theorem
+trueEqI theorem = do
+  let p =  conclusion theorem
+  assmP $\leftarrow$ assume p                        $\textrm{--- } \{ p \} \vdash p$
+  trueI $\leftarrow$ trueI                           $\textrm{--- } \emptyset \vdash \top$
+  das1  $\leftarrow$ deductAntiSymmetric assmP trueI $\textrm{--- } \{ p \} \vdash p = \top$
+  let c =  conclusion das1
+  assmC $\leftarrow$ assume c                        $\textrm{--- } \{ p = \top \} \vdash p = \top$
+  eqE   $\leftarrow$ trueEqE assmC                   $\textrm{--- } \{ p = \top \} \vdash p$
+  das2  $\leftarrow$ deductAntiSymmetric das1 eqE    $\textrm{--- } \emptyset \vdash p = (p = \top)$
+  symm  $\leftarrow$ symmetry das2                   $\textrm{--- } \emptyset \vdash (p = \top) = p$
+  equalityModusPonens symm theorem         $\textrm{--- } \Gamma \vdash p$
 \end{lstlisting}
-Intuitively, a $\mathtt{PreTactic}$ can be thought of as a local update on a derivation tree, applying only at $\mathtt{Hole}$s.
+Here, we have annotated the Haskell source code to make clear what is happening.
+The function $\mathtt{conclusion}$ returns the conclusion of a theorem.
+The constant $\mathtt{trueI}$ is a theorem stating $\vdash \top$.
+The function $\mathtt{trueEqE}$ transforms a derivation of $\Gamma \vdash p = \top$ into one of $\Gamma \vdash p$.
+The functions $\mathtt{assume}$, $\mathtt{deductAntiSymmetric}$, $\mathtt{symmetry}$ and $\mathtt{equalityModusPonens}$ are all basic HOL rules and axioms implemented in the \mosquito kernel.
 
+Using this theorem, we can derive a tactic that transforms an obligation to prove $\Gamma \vdash p = \top$ into an obligation to prove $\Gamma \vdash p$ in a backwards, tactic-driven proof:
 \begin{lstlisting}
-data ProofStep
-  = Refine Justification [ProofStep]
-  | Open [Theorem] Term
-\end{lstlisting}
-
-\begin{lstlisting}
-type Tactic = ProofState $\rightarrow$ Inference ProofState
-\end{lstlisting}
-
-\begin{lstlisting}
-selectPTac :: ([Theorem] $\rightarrow$ Term $\rightarrow$ Bool) -> Tactic
-selectPTac = ...
-\end{lstlisting}
-
-\begin{lstlisting}
-selectITac :: (Int $\rightarrow$ Bool) $\rightarrow$ Tactic
-selectITac = ...
-\end{lstlisting}
-
-\begin{lstlisting}
-($\oplus$) :: Tactic $\rightarrow$ Tactic $\rightarrow$ Tactic
-($\oplus$) l r state = inference (l state) (const $\circ$ r $\$$ state) return
-
-repeat :: Tactic $\rightarrow$ Tactic
-repeat tactic state = inference (tactic state) (const $\circ$ return $\$$ state) (repeat tactic)
-\end{lstlisting}
-
-\begin{lstlisting}
-($\rightarrowtail$) :: Monad m $\Rightarrow$ ($\alpha$ $\rightarrow$ m $\beta$) $\rightarrow$ ($\beta$ $\rightarrow$ m $\gamma$) $\rightarrow$ $\alpha$ $\rightarrow$ m $\gamma$
-($\rightarrowtail$) = ...
+trueEqIPreTac :: PreTactic
+trueEqIPreTac assms concl = do
+  trueC $\leftarrow$ trueC
+  (left, right) $\leftarrow$ fromEquality concl
+  if right $\equiv$ trueC then
+    return $\$$ Refine (\[t] $\rightarrow$ trueEqI t) [Open assms left]
+  else
+    fail "`trueEqITac'"
+trueEqITac :: Tactic
+trueEqITac =
+  apply trueEqIPreTac $\oplus$ (symmetryTac $\rightarrowtail$ apply trueEqIPreTac)
 \end{lstlisting}
 
 \begin{lstlisting}
-autoBase :: Tactic
-autoBase = repeat $\$$ alphaTac $\oplus$ autoEtaTac $\oplus$ autoBetaTac
-  where
-    autoBetaTac :: Tactic
-    autoBetaTac = betaTac $\oplus$ (symmetryTac $\rightarrowtail$ betaTac)
-
-    autoEtaTac :: Tactic
-    autoEtaTac = etaTac $\oplus$ (symmetryTac $\rightarrowtail$ etaTac)
+reflexivityThm :: Inference Theorem
+reflexivityThm = do
+  prf <- conjecture "reflexivity-thm" conj
+  prf <-
+    by [
+      unfoldTac forallD
+    , reductionTac
+    , abstractTac
+    , trueEqITac
+    , autoBase
+    ] prf
+  qed prf
 \end{lstlisting}
 
-\section{Conclusions}
+\section{Conclusions and future work}
 \label{sect.conclusions}
 
 \bibliography{mulligan-mosquito-2013}
