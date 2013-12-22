@@ -2,7 +2,12 @@
 
 -- |Implements some basic tactics corresponding to the rules found
 --  in the kernel and in the file @DerivedRules.hs@.
-module Mosquito.ProofState.Tactics where
+module Mosquito.ProofState.Tactics (
+  failTac, failWithMessageTac, idTac,
+  solvePreTac, solveTac, forwardTac,
+  alphaPreTac, alphaTac,
+  
+) where
 
   import Prelude hiding (fail)
   

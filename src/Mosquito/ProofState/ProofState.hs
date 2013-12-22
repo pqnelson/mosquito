@@ -252,6 +252,10 @@ where
         mChildren <- State.mapM go children
         return . concat $ mChildren
 
+  prettySelected :: [(Int, String)] -> String
+  prettySelected =
+    L.intercalate "\n" . map (\(index, p) -> unwords ["[", show index, "]", p])
+
   --
   -- * Building and modifying a proof state.
   --
@@ -324,9 +328,11 @@ where
       go ptac prooftree =
         case prooftree of
           t@(Hole Selected assms concl) -> do
-            inference (ptac assms concl)
-              (const . return $ t)
-              refineProofTree
+            edit <- ptac assms concl
+            refineProofTree edit
+--            inference (ptac assms concl)
+--              (const . return $ t)
+--              refineProofTree
           Hole{}                        -> return prooftree
           Leaf{}                        -> return prooftree
           (Node j children)             -> do
@@ -343,7 +349,7 @@ where
   --  returned.
   qed :: ProofState -> Inference Theorem
   qed status =
-    if countOpen status == 0 then do
+    if open == 0 then do
       thm <- go $ get derivation status
       if conclusion thm == get goal status then
         return thm
@@ -355,11 +361,15 @@ where
         , unwords ["from the proof: `", prettyConfig config (conclusion thm), "'."]
         ]
     else
-      fail . unwords $ [
+      fail $ unwords [
         "Cannot `qed' an incomplete derivation, when attempting to"
       , unwords ["complete proof of `", prettyConfig config (get goal status), "'."]
-      ]
+      , unwords ["In particular", show open, "open goals persist. They are:\n"]
+      ] ++ (prettySelected . getPrettySelectedGoals $ status)
     where
+      open :: Int
+      open = countOpen status
+
       config :: ProofStateConfiguration
       config = get configuration status
 
@@ -446,7 +456,3 @@ where
         , unwords ["Goals:", show $ countOpen status, "open with", show $ countSelected status, "selected."]
         , prettySelected . getPrettySelectedGoals $ status
         ]
-      where
-        prettySelected :: [(Int, String)] -> String
-        prettySelected =
-          L.intercalate "\n" . map (\(index, p) -> unwords ["[", show index, "]", p])

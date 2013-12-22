@@ -240,7 +240,7 @@ trueEqIPreTac assms concl = do
   trueC $\leftarrow$ trueC
   (left, right) $\leftarrow$ fromEquality concl
   if right $\equiv$ trueC then
-    return $\$$ Refine (\[t] $\rightarrow$ trueEqI t) [Open assms left]
+    return $\$$ Refine ($\lambda$[t] $\rightarrow$ trueEqI t) [Open assms left]
   else
     fail "`trueEqITac'"
 trueEqITac :: Tactic
@@ -251,15 +251,12 @@ trueEqITac =
 \begin{lstlisting}
 reflexivityThm :: Inference Theorem
 reflexivityThm = do
-  prf <- conjecture "reflexivity-thm" conj
-  prf <-
-    by [
-      unfoldTac forallD
-    , reductionTac
-    , abstractTac
-    , trueEqITac
-    , autoBase
-    ] prf
+  let conj = ...
+  prf $\leftarrow$ conjecture "reflexivityThm" conj
+  prf $\leftarrow$ by [
+    unfoldTac forallD, reductionTac
+  , abstractTac, trueEqITac, autoBase
+  ] prf
   qed prf
 \end{lstlisting}
 

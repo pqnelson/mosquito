@@ -17,7 +17,7 @@ module Mosquito.ProofState.Unfolding where
   --  extraneous subgoals, changing the goal to prove into the original goal
   --  with the constant unfolded.
   unfoldTac :: TheoremTactic
-  unfoldTac theorem = apply local >=> pointwiseTac >=> (try $ autoSolve theorem)
+  unfoldTac theorem = apply local -- >=> pointwiseTac >=> (try $ autoSolve theorem)
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =

@@ -68,16 +68,20 @@ module Mosquito.Theories.Bool where
   trueD = theoremOfDecl trueDecl
 
   -- |Produces a derivation of @{} ⊢ true@.
-  trueI :: Inference Theorem
-  trueI = do
+  -- trueI :: Inference Theorem
+  trueI = Mosquito.Utility.Pretty.putStrLn $ do
     trueC <- trueC
     trueD <- trueD
     conj  <- conjecture "true-intro" trueC
     conj  <-
       by [
         unfoldTac trueD
+      , try reflexivityTac
+      -- unfoldTac trueD
       ] conj
-    qed conj
+    return conj
+
+{-
 
   trueIPreTac :: PreTactic
   trueIPreTac _ concl = do
@@ -374,3 +378,4 @@ module Mosquito.Theories.Bool where
     disjunctionC <- disjunctionC
     pre          <- mkApp disjunctionC left
     mkApp pre right
+-}
