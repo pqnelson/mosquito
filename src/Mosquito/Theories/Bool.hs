@@ -11,12 +11,14 @@ module Mosquito.Theories.Bool where
 
   import Mosquito.DerivedRules
 
-  import Mosquito.ProofState.Automation
-  import Mosquito.ProofState.ProofState
-  import Mosquito.ProofState.Stacktics
-  import Mosquito.ProofState.Tactics
-  import Mosquito.ProofState.Tacticals
-  import Mosquito.ProofState.Unfolding
+  -- import Mosquito.ProofState.Automation
+  -- import Mosquito.ProofState.ProofState
+  -- import Mosquito.ProofState.Stacktics
+  -- import Mosquito.ProofState.Tactics
+  -- import Mosquito.ProofState.Tacticals
+  -- import Mosquito.ProofState.Unfolding
+
+  import Mosquito.ProofState.NewTacticals
 
   import Mosquito.Utility.Pretty
 
@@ -68,34 +70,31 @@ module Mosquito.Theories.Bool where
   trueD = theoremOfDecl trueDecl
 
   -- |Produces a derivation of @{} ⊢ true@.
-  -- trueI :: Inference Theorem
-  trueI = Mosquito.Utility.Pretty.putStrLn $ do
+  trueI :: Inference Theorem
+  trueI = do
     trueC <- trueC
     trueD <- trueD
-    conj  <- conjecture "true-intro" trueC
-    conj  <-
-      by [
-        unfoldTac trueD
-      , try reflexivityTac
-      -- unfoldTac trueD
-      ] conj
-    return conj
+    conj  <- mkConjecture "trueI" trueC
+    conj  <- act (unfoldTactical trueD) conj
+    qed conj
 
-{-
-
-  trueIPreTac :: PreTactic
-  trueIPreTac _ concl = do
+  trueIPreTactic :: PreTactic
+  trueIPreTactic _ concl = do
     trueC <- trueC
     if concl == trueC then
-      return $ Refine (\[] -> trueI) []
+      return (\[] -> trueI, [])
     else
       fail . unwords $ [
         "Conclusion passed to `trueIPreTac' not `true'."
       ]
 
   -- |Solves all goals of the form @true@.
-  trueITac :: Tactic
-  trueITac = Mosquito.ProofState.Stacktics.selectAllGoalsTac >=> apply trueIPreTac
+  trueITactic :: Tactic
+  trueITactic =
+    Tactic {
+      _tacticName = "trueITactic"
+    , _preTactic  = trueIPreTactic
+    }
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma ⊢ p = true@.
@@ -105,14 +104,18 @@ module Mosquito.Theories.Bool where
     symm  <- symmetry theorem
     equalityModusPonens symm trueI
 
-  trueEqEPreTac :: PreTactic
-  trueEqEPreTac assms concl = do
+  trueEqEPreTactic :: PreTactic
+  trueEqEPreTactic assms concl = do
     trueC <- trueC
     eq <- mkEquality concl trueC
-    return $ Refine (\[t] -> trueEqE t) [Open assms eq]
+    return (\[t] -> trueEqE t, [(assms, eq)])
 
-  trueEqETac :: Tactic
-  trueEqETac = apply trueEqEPreTac
+  trueEqETactic :: Tactic
+  trueEqETactic =
+    Tactic {
+      _tacticName = "trueEqETactic"
+    , _preTactic  = trueEqEPreTactic
+    }
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
@@ -129,17 +132,21 @@ module Mosquito.Theories.Bool where
     symm  <- symmetry das2
     equalityModusPonens symm theorem
 
-  trueEqIPreTac :: PreTactic
-  trueEqIPreTac assms concl = do
+  trueEqIPreTactic :: PreTactic
+  trueEqIPreTactic assms concl = do
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
-      return $ Refine (\[t] -> trueEqI t) [Open assms left]
+      return $ (\[t] -> trueEqI t, [(assms, left)])
     else
       fail "`trueEqITac'"
 
-  trueEqITac :: Tactic
-  trueEqITac = apply trueEqIPreTac <|> (symmetryTac >=> apply trueEqIPreTac)
+  trueEqITactic :: Tactic
+  trueEqITactic =
+    Tactic {
+      _tacticName = "trueEqETactic"
+    , _preTactic  = trueEqIPreTactic
+    }
 
   --
   -- ** Universal quantification
@@ -168,25 +175,26 @@ module Mosquito.Theories.Bool where
     let lam  =  mkLam name ty body
     mkApp inst lam
 
-  reflexivityThm :: Inference Theorem
-  reflexivityThm = do
+  -- reflexivityThm :: Inference Theorem
+  reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
     refl    <- reflexivity t
     trueEqI <- trueEqI refl
     conj    <- mkForall "t" alphaType eq
     forallD <- forallD
-    prf     <- conjecture "reflexivity-strong" conj
-    prf     <-
-      by [
-        unfoldTac forallD
-      , reductionTac
-      , abstractTac
-      , trueEqITac
-      , autoBase
-      ] prf
-    qed prf
+    prf     <- mkConjecture "reflexivityThm" conj
+    prf     <- act (unfoldTactical forallD) prf
+    -- by [
+    --   unfoldTac forallD
+    -- , reductionTac
+    -- , abstractTac
+    -- , trueEqITac
+    -- , autoBase
+    -- ] prf
+    return prf
 
+{-
   --
   -- ** Logical falsity
   --

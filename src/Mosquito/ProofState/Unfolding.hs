@@ -55,7 +55,7 @@ module Mosquito.ProofState.Unfolding where
   -- |Decompose an equality between terms into equalities between subterms,
   --  solving easy goals with automation.
   pointwiseTac :: Tactic
-  pointwiseTac = repeat (abstractTac <|> combineTac) >=> try autoBase
+  pointwiseTac = repeat (abstractTac <|> combineTac) >=> autoBaseTac
 
   -- |Performs a beta-reduction of the goal, immediately closing extraneous
   --  subgoals with automation.

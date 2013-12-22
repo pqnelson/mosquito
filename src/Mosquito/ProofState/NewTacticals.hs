@@ -18,6 +18,8 @@ where
   import Mosquito.Kernel.QualifiedName
   import Mosquito.Utility.Pretty
 
+  import Debug.Trace
+
   data Selection where
     Selected   :: Selection
     Unselected :: Selection
@@ -35,12 +37,17 @@ where
 
   mkLabels [''Tactic]
 
+  instance Show Tactic where
+    show = get tacticName
+
   data Tactical where
     Apply      :: Tactic   -> Tactical
     Try        :: Tactical -> Tactical
     FollowedBy :: Tactical -> Tactical -> Tactical
     Id         :: Tactical
     Choice     :: Tactical -> Tactical -> Tactical
+    Repeat     :: Tactical -> Tactical
+      deriving Show
 
   (<*>) :: Tactical -> Tactical -> Tactical
   left <*> right = left `FollowedBy` right
@@ -48,8 +55,9 @@ where
   (<|>) :: Tactical -> Tactical -> Tactical
   left <|> right = left `Choice` right
 
-  by :: [Tactical] -> Tactical
-  by = foldr (<*>) Id
+  repeatN :: Int -> Tactic -> Tactical
+  repeatN 0 tactic = Id
+  repeatN m tactic = Apply tactic <*> repeatN (m - 1) tactic
 
   data IncompleteDerivation where
     Hole   :: Selection     -> [Theorem] -> Term -> IncompleteDerivation
@@ -75,6 +83,14 @@ where
       }
     else
       fail $ "Cannot conjecture a non-propositional term."
+
+  optimise :: Tactical -> Tactical
+  optimise (FollowedBy left Id)                = optimise left
+  optimise (FollowedBy Id right)               = optimise right
+  optimise (Repeat Id)                         = Id
+  optimise (FollowedBy (Try left) (Try right)) =
+    Try (FollowedBy (optimise left) (optimise right))
+  optimise tactical = tactical
 
   act :: Tactical -> ProofState -> Inference ProofState
   act tactical proofState = do
@@ -112,12 +128,25 @@ where
           (const $ dispatch right derivation)
           return
 
+      repeat :: Tactical -> IncompleteDerivation -> Inference IncompleteDerivation
+      repeat tactical derivation =
+        inference (dispatch tactical derivation)
+          (const . return $ derivation)
+          (\d -> go tactical d derivation)
+        where
+          go :: Tactical -> IncompleteDerivation -> IncompleteDerivation -> Inference IncompleteDerivation
+          go tactical derivation fixed =
+            inference (dispatch tactical derivation)
+              (const . return $ fixed)
+              (\d -> go tactical d derivation)
+
       dispatch :: Tactical -> IncompleteDerivation -> Inference IncompleteDerivation
       dispatch (Apply tactic)          derivation = apply tactic derivation
       dispatch (Try   tactical)        derivation = return $ try tactical derivation
       dispatch (FollowedBy left right) derivation = followedBy left right derivation
       dispatch Id                      derivation = return derivation
       dispatch (Choice left right)     derivation = choice left right derivation
+      dispatch (Repeat tactical)       derivation = repeat tactical derivation
 
   qed :: ProofState -> Inference Theorem
   qed = go . get derivation
@@ -198,25 +227,6 @@ where
   -- Testing
   --
 
-  constantOfDecl :: Inference (Term, a) -> Inference Term
-  constantOfDecl = liftM fst
-
-  theoremOfDecl :: Inference (a, Theorem) -> Inference Theorem
-  theoremOfDecl = liftM snd
-
-  trueDecl :: Inference (Term, Theorem)
-  trueDecl = do
-    let name =  mkQualifiedName ["Mosquito", "Bool"] "true"
-    let t    =  mkLam "a" boolType $ mkVar "a" boolType
-    eq       <- mkEquality t t
-    primitiveNewDefinedConstant name eq boolType
-
-  trueC :: Inference Term
-  trueC = constantOfDecl trueDecl
-
-  trueD :: Inference Theorem
-  trueD = theoremOfDecl trueDecl
-
   betaReduce :: Term -> Inference Term
   betaReduce t = do
     (left, right) <- fromApp t
@@ -282,10 +292,46 @@ where
     , _preTactic  = betaPreTactic
     }
 
+  abstractPreTactic :: PreTactic
+  abstractPreTactic assms concl = do
+    (l, r)             <- fromEquality concl
+    (name,  ty, lBody) <- fromLam l
+    (name', _,  rBody) <- fromLam r
+    if name == name' then do
+      nConcl <- mkEquality lBody rBody
+      return (\[t] -> abstract name ty t, [(assms, nConcl)])
+    else do
+      let nBody =  permute name name' rBody
+      nConcl    <- mkEquality lBody nBody
+      return (\[t] -> abstract name ty t, [(assms, nConcl)])
+
+  abstractTactic :: Tactic
+  abstractTactic =
+      Tactic {
+        _tacticName = "abstractTactic"
+      , _preTactic  = abstractPreTactic
+      }
+
+  combinePreTactic :: PreTactic
+  combinePreTactic assms concl = do
+    (left, right)    <- fromEquality concl
+    (leftL, leftR)   <- fromApp left
+    (rightL, rightR) <- fromApp right
+    nLeft            <- mkEquality leftL rightL
+    nRight           <- mkEquality leftR rightR
+    return (\[t, t'] -> combine t t', [(assms, nLeft), (assms, nRight)])
+
+  combineTactic :: Tactic
+  combineTactic =
+    Tactic {
+      _tacticName = "combineTactic"
+    , _preTactic  = combinePreTactic
+    }
+
   solvePreTactic :: TheoremPreTactic
   solvePreTactic thm _ concl =
     if conclusion thm == concl then
-      return $ (\[] -> return thm, [])
+      return (\[] -> return thm, [])
     else
       fail "`solvePreTac'"
 
@@ -309,11 +355,60 @@ where
       autoEtaTactical :: Tactical
       autoEtaTactical = Apply etaTactic <|> (Apply symmetryTactic <*> Apply etaTactic)
 
-  test = Mosquito.Utility.Pretty.putStrLn $ do
-    trueC <- trueC
-    trueD <- trueD
-    goal  <- mkEquality trueC trueC
-    conj  <- mkConjecture "test" trueC
-    conj  <- act (Try autoBaseTactical) conj
-    conj  <- act (autoSolveTactical trueD) conj
-    return conj
+  equalityModusPonensPreTactic :: TermPreTactic
+  equalityModusPonensPreTactic guess assms concl = do
+    eq <- mkEquality guess concl
+    return $ (\[t, t'] -> equalityModusPonens t t', [(assms, eq), (assms, guess)])
+
+  equalityModusPonensTactic :: Term -> Tactic
+  equalityModusPonensTactic guess =
+    Tactic {
+      _tacticName = "equalityModusPonensTactic"
+    , _preTactic  = equalityModusPonensPreTactic guess
+    }
+
+  pointwiseTactical :: Tactical
+  pointwiseTactical = Repeat (Apply abstractTactic <|> Apply combineTactic) <*> autoBaseTactical
+
+  unfoldTactical :: Theorem -> Tactical
+  unfoldTactical thm = Apply localTac <*> (Try pointwiseTactical) <*> (Try $ autoSolveTactical thm)
+    where
+      replace :: ConstantDescription -> Term -> Term -> Inference Term
+      replace dom rng t =
+        if isApp t then do
+          (l, r) <- fromApp t
+          nL     <- replace dom rng l
+          nR     <- replace dom rng r
+          mkApp nL nR
+        else if isLam t then do
+          (n, ty, body) <- fromLam t
+          nBody <- replace dom rng body
+          return $ mkLam n ty nBody
+        else if isConst t then do
+          descr <- fromConst t
+          if descr == dom then
+            return rng
+          else
+            return t
+        else return t
+
+      local :: PreTactic
+      local assms concl = do
+        (left, right) <- fromEquality . conclusion $ thm
+        if isConst left then do
+          c     <- fromConst left
+          guess <- replace c right concl
+          equalityModusPonensPreTactic guess assms concl
+        else if isConst right then do
+          c     <- fromConst right
+          guess <- replace c left concl
+          equalityModusPonensPreTactic guess assms concl
+        else
+          fail "`unfoldTac'"
+
+      localTac :: Tactic
+      localTac =
+        Tactic {
+          _tacticName = "unfoldTactic"
+        , _preTactic  = local
+        }
