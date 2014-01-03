@@ -5,18 +5,17 @@ module Mosquito.ProofState.Automation where
   import Control.Monad hiding (fail)
 
   import Mosquito.ProofState.ProofState
+  import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
-  import Mosquito.ProofState.Tacticals
 
-  autoSolve :: TheoremTactic
-  autoSolve thm =
-    solveTac thm <|> symmetryTac >=> solveTac thm
+  autoSolveTactic :: TheoremTactic
+  autoSolveTactic thm = symmetrise (solvePreTactic thm)
 
-  autoBase :: Tactic
-  autoBase = repeat $ alphaTac <|> autoEtaTac <|> autoBetaTac
+  autoBaseTactic :: Tactic
+  autoBaseTactic = repeat (apply alphaPreTactic <|> autoEtaTactic <|> autoBetaTactic)
     where
-      autoBetaTac :: Tactic
-      autoBetaTac = betaTac <|> (symmetryTac >=> betaTac)
+      autoBetaTactic :: Tactic
+      autoBetaTactic = symmetrise betaPreTactic
 
-      autoEtaTac :: Tactic
-      autoEtaTac = etaTac <|> (symmetryTac >=> etaTac)
+      autoEtaTactic :: Tactic
+      autoEtaTactic = symmetrise etaPreTactic

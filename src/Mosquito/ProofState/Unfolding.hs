@@ -4,20 +4,20 @@ module Mosquito.ProofState.Unfolding where
 
   import Prelude hiding (fail, repeat)
 
-  import Control.Monad hiding (fail)
+  import Control.Monad hiding (fail, (>=>))
 
   import Mosquito.Kernel.Term
 
   import Mosquito.ProofState.Automation
   import Mosquito.ProofState.ProofState
+  import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
-  import Mosquito.ProofState.Tacticals
 
   -- |Unfolds a definition supplied as a theorem and then immediately solves
   --  extraneous subgoals, changing the goal to prove into the original goal
   --  with the constant unfolded.
   unfoldTac :: TheoremTactic
-  unfoldTac theorem = apply local -- >=> pointwiseTac >=> (try $ autoSolve theorem)
+  unfoldTac theorem = apply localPreTactic >=> pointwiseTactic >=> (try $ autoSolveTactic theorem)
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =
@@ -38,31 +38,36 @@ module Mosquito.ProofState.Unfolding where
             return t
         else return t
 
-      local :: PreTactic
+      local :: LocalEdit
       local assms concl = do
         (left, right) <- fromEquality . conclusion $ theorem
         if isConst left then do
           c     <- fromConst left
           guess <- replace c right concl
-          equalityModusPonensPreTac guess assms concl
+          equalityModusPonensLocalEdit guess assms concl
         else if isConst right then do
           c     <- fromConst right
           guess <- replace c left concl
-          equalityModusPonensPreTac guess assms concl
+          equalityModusPonensLocalEdit guess assms concl
         else
           fail "`unfoldTac'"
 
+      localPreTactic = mkPreTactic "unfoldTac.local" local
+
   -- |Decompose an equality between terms into equalities between subterms,
   --  solving easy goals with automation.
-  pointwiseTac :: Tactic
-  pointwiseTac = repeat (abstractTac <|> combineTac) >=> autoBaseTac
+  pointwiseTactic :: Tactic
+  pointwiseTactic = repeat (apply abstractPreTactic <|> apply combinePreTactic) >=> autoBaseTactic
 
   -- |Performs a beta-reduction of the goal, immediately closing extraneous
   --  subgoals with automation.
-  reductionPreTac :: PreTactic
-  reductionPreTac assms concl = do
+  reductionLocalEdit :: LocalEdit
+  reductionLocalEdit assms concl = do
     reduced <- betaReduce concl
-    equalityModusPonensPreTac reduced assms concl
+    equalityModusPonensLocalEdit reduced assms concl
+
+  reductionPreTactic :: PreTactic
+  reductionPreTactic = mkPreTactic "reductionPreTactic" reductionLocalEdit
 
   reductionTac :: Tactic
-  reductionTac = repeat $ apply reductionPreTac >=> autoBase
+  reductionTac = repeat (apply reductionPreTactic) >=> autoBaseTactic
