@@ -5,6 +5,11 @@
 --  initial conjecture, applying pretactics to a proof state, and
 --  for retrieving a theorem from a complete backwards proof.
 module Mosquito.ProofState.ProofState (
+  Selection(..),
+  IncompleteDerivation,
+  ProofState,
+  mkConjecture, qed,
+  act
 ) where
 
   import Prelude hiding (fail)
@@ -117,6 +122,7 @@ module Mosquito.ProofState.ProofState (
       dispatch :: Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
       dispatch (Apply tactic)          derivation = apply tactic derivation
       dispatch (FollowedBy left right) derivation = followedBy left right derivation
+      dispatch (Try tactical)          derivation = return $ try tactical derivation
       dispatch Id                      derivation = return derivation
       dispatch Fail                    derivation = fail ""
       dispatch (Choice left right)     derivation = choice left right derivation

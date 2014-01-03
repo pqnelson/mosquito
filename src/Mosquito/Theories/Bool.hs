@@ -4,21 +4,16 @@ module Mosquito.Theories.Bool where
 
   import Prelude hiding (fail, repeat)
 
-  import Control.Monad hiding (fail)
+  import Control.Monad hiding (fail, (>=>))
 
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
 
-  import Mosquito.DerivedRules
-
-  -- import Mosquito.ProofState.Automation
-  -- import Mosquito.ProofState.ProofState
-  -- import Mosquito.ProofState.Stacktics
-  -- import Mosquito.ProofState.Tactics
-  -- import Mosquito.ProofState.Tacticals
-  -- import Mosquito.ProofState.Unfolding
-
-  import Mosquito.ProofState.NewTacticals
+  import Mosquito.ProofState.Automation
+  import Mosquito.ProofState.ProofState
+  import Mosquito.ProofState.PreTactics
+  import Mosquito.ProofState.Tactics
+  import Mosquito.ProofState.Unfolding
 
   import Mosquito.Utility.Pretty
 
@@ -75,11 +70,12 @@ module Mosquito.Theories.Bool where
     trueC <- trueC
     trueD <- trueD
     conj  <- mkConjecture "trueI" trueC
-    conj  <- act (unfoldTactical trueD) conj
+    conj  <- act (unfoldTactic trueD) conj
+    conj  <- act (try . apply $ alphaPreTactic) conj
     qed conj
 
-  trueIPreTactic :: PreTactic
-  trueIPreTactic _ concl = do
+  trueILocalEdit :: LocalEdit
+  trueILocalEdit _ concl = do
     trueC <- trueC
     if concl == trueC then
       return (\[] -> trueI, [])
@@ -89,12 +85,8 @@ module Mosquito.Theories.Bool where
       ]
 
   -- |Solves all goals of the form @true@.
-  trueITactic :: Tactic
-  trueITactic =
-    Tactic {
-      _tacticName = "trueITactic"
-    , _preTactic  = trueIPreTactic
-    }
+  trueIPreTactic :: PreTactic
+  trueIPreTactic = mkPreTactic "trueITactic" trueILocalEdit
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma ⊢ p = true@.
@@ -104,18 +96,14 @@ module Mosquito.Theories.Bool where
     symm  <- symmetry theorem
     equalityModusPonens symm trueI
 
-  trueEqEPreTactic :: PreTactic
-  trueEqEPreTactic assms concl = do
+  trueEqELocalEdit :: LocalEdit
+  trueEqELocalEdit assms concl = do
     trueC <- trueC
     eq <- mkEquality concl trueC
     return (\[t] -> trueEqE t, [(assms, eq)])
 
-  trueEqETactic :: Tactic
-  trueEqETactic =
-    Tactic {
-      _tacticName = "trueEqETactic"
-    , _preTactic  = trueEqEPreTactic
-    }
+  trueEqEPreTactic :: PreTactic
+  trueEqEPreTactic = mkPreTactic "trueEqEPreTactic" trueEqELocalEdit
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
@@ -132,21 +120,17 @@ module Mosquito.Theories.Bool where
     symm  <- symmetry das2
     equalityModusPonens symm theorem
 
-  trueEqIPreTactic :: PreTactic
-  trueEqIPreTactic assms concl = do
+  trueEqILocalEdit :: LocalEdit
+  trueEqILocalEdit assms concl = do
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
       return $ (\[t] -> trueEqI t, [(assms, left)])
     else
-      fail "`trueEqITac'"
+      fail "`trueEqILocalEdit'"
 
-  trueEqITactic :: Tactic
-  trueEqITactic =
-    Tactic {
-      _tacticName = "trueEqETactic"
-    , _preTactic  = trueEqIPreTactic
-    }
+  trueEqIPreTactic :: PreTactic
+  trueEqIPreTactic = mkPreTactic "trueEqIPreTactic" trueEqILocalEdit
 
   --
   -- ** Universal quantification
@@ -179,12 +163,19 @@ module Mosquito.Theories.Bool where
   reflexivityThm = Mosquito.Utility.Pretty.putStrLn $ do
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
-    refl    <- reflexivity t
+    refl    <- alpha t t
     trueEqI <- trueEqI refl
     conj    <- mkForall "t" alphaType eq
     forallD <- forallD
     prf     <- mkConjecture "reflexivityThm" conj
-    prf     <- act (unfoldTactical forallD) prf
+    prf     <-
+      (flip act) prf $ every [
+        unfoldTactic forallD
+      , try . apply $ reductionPreTactic
+      , try . apply $ abstractPreTactic
+      , try . apply $ trueEqIPreTactic
+      , autoBaseTactic
+      ]
     -- by [
     --   unfoldTac forallD
     -- , reductionTac

@@ -1,6 +1,9 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
-module Mosquito.ProofState.Unfolding where
+module Mosquito.ProofState.Unfolding (
+  unfoldTactic, pointwiseTactic,
+  reductionLocalEdit, reductionPreTactic, reductionTactic
+) where
 
   import Prelude hiding (fail, repeat)
 
@@ -16,8 +19,8 @@ module Mosquito.ProofState.Unfolding where
   -- |Unfolds a definition supplied as a theorem and then immediately solves
   --  extraneous subgoals, changing the goal to prove into the original goal
   --  with the constant unfolded.
-  unfoldTac :: TheoremTactic
-  unfoldTac theorem = apply localPreTactic >=> pointwiseTactic >=> (try $ autoSolveTactic theorem)
+  unfoldTactic :: TheoremTactic
+  unfoldTactic theorem = apply localPreTactic >=> pointwiseTactic >=> (try $ autoSolveTactic theorem)
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =
@@ -69,5 +72,5 @@ module Mosquito.ProofState.Unfolding where
   reductionPreTactic :: PreTactic
   reductionPreTactic = mkPreTactic "reductionPreTactic" reductionLocalEdit
 
-  reductionTac :: Tactic
-  reductionTac = repeat (apply reductionPreTactic) >=> autoBaseTactic
+  reductionTactic :: Tactic
+  reductionTactic = repeat (apply reductionPreTactic) >=> autoBaseTactic
