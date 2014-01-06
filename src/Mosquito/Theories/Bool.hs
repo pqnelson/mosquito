@@ -70,12 +70,13 @@ module Mosquito.Theories.Bool where
     trueC <- trueC
     trueD <- trueD
     conj  <- mkConjecture "trueI" trueC
-    conj  <- act (unfoldTactic trueD) conj
-    conj  <- act (try . apply $ alphaPreTactic) conj
+    conj  <- act conj . unfoldTactic $ trueD
+    conj  <- act conj . try . apply $ alphaPreTactic
     qed conj
 
   trueILocalEdit :: LocalEdit
   trueILocalEdit _ concl = do
+    userMark . unwords $ ["trueILocalEdit:", pretty concl]
     trueC <- trueC
     if concl == trueC then
       return (\[] -> trueI, [])
@@ -98,6 +99,7 @@ module Mosquito.Theories.Bool where
 
   trueEqELocalEdit :: LocalEdit
   trueEqELocalEdit assms concl = do
+    userMark . unwords $ ["trueEqELocalEdit:", pretty concl]
     trueC <- trueC
     eq <- mkEquality concl trueC
     return (\[t] -> trueEqE t, [(assms, eq)])
@@ -122,6 +124,7 @@ module Mosquito.Theories.Bool where
 
   trueEqILocalEdit :: LocalEdit
   trueEqILocalEdit assms concl = do
+    userMark . unwords $ ["trueEqILocalEdit:", pretty concl]
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
@@ -169,7 +172,7 @@ module Mosquito.Theories.Bool where
     forallD <- forallD
     prf     <- mkConjecture "reflexivityThm" conj
     prf     <-
-      (flip act) prf $ every [
+      act prf $ every [
         unfoldTactic forallD
       , try . apply $ reductionPreTactic
       , try . apply $ abstractPreTactic

@@ -12,17 +12,17 @@ module Mosquito.ProofState.ProofState (
   act
 ) where
 
-  import Prelude hiding (fail)
+  import Prelude hiding (fail, repeat)
 
   import qualified Control.Monad.State as State
 
   import Data.Label
-  import qualified Data.List as L
+  import qualified Data.List as L hiding (repeat)
 
   import Mosquito.Kernel.Term
 
   import Mosquito.ProofState.PreTactics
-  import Mosquito.ProofState.Tactics
+  import Mosquito.ProofState.Tactics hiding (repeat, try, choice, apply)
 
   import Mosquito.Utility.Pretty
 
@@ -71,62 +71,68 @@ module Mosquito.ProofState.ProofState (
 
   -- * Progressing the proof
 
-  act :: Tactic -> ProofState -> Inference ProofState
-  act tactical proofState = do
-      derivation' <- dispatch (optimise tactical) $ get derivation proofState
-      return $ set derivation derivation' proofState
+  apply :: PreTactic -> IncompleteDerivation -> Inference IncompleteDerivation
+  apply tactic (Hole Selected assms goal) = do
+    let editor = get localEdit tactic
+    (justification, children) <- editor assms goal
+    let children' = map (uncurry $ Hole Selected) children
+    return $ Branch justification children'
+  apply tactic t@(Hole Unselected assms goal) = return t
+  apply tactic (Branch justification children) = do
+    children' <- mapM (apply tactic) children
+    return $ Branch justification children'
+
+  applyTrace :: PreTactic -> IncompleteDerivation -> Inference (IncompleteDerivation, [String])
+  applyTrace tactic derivation = do
+    derivation <- apply tactic derivation
+    return (derivation, return . unwords $ ["Applying `", pretty tactic, "' at `", pretty derivation, "'."])
+
+  try :: Tactic -> IncompleteDerivation -> IncompleteDerivation
+  try tactical h@(Hole Selected assms concl) =
+    inference (dispatch tactical h)
+      (const h)
+      id
+  try tactical h@(Hole Unselected assms concl) = h
+  try tactical (Branch justification children) =
+    Branch justification $ map (try tactical) children
+
+  followedBy :: Tactic -> Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
+  followedBy left right derivation = do
+    left' <- dispatch left derivation
+    dispatch right left'
+
+  choice :: Tactic -> Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
+  choice left right derivation =
+    inference (dispatch left derivation)
+      (const $ dispatch right derivation)
+      return
+
+  repeat :: Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
+  repeat tactical derivation =
+    inference (dispatch tactical derivation)
+      (const . return $ derivation)
+      (\d -> go tactical d derivation)
     where
-      apply :: PreTactic -> IncompleteDerivation -> Inference IncompleteDerivation
-      apply tactic (Hole Selected assms goal) = do
-        let editor = get localEdit tactic
-        (justification, children) <- editor assms goal
-        let children' = map (\(x, y) -> Hole Selected x y) children
-        return $ Branch justification children'
-      apply tactic t@(Hole Unselected assms goal) = return t
-      apply tactic (Branch justification children) = do
-        children' <- mapM (apply tactic) children
-        return $ Branch justification children'
-
-      try :: Tactic -> IncompleteDerivation -> IncompleteDerivation
-      try tactical h@(Hole Selected assms concl) =
-        inference (dispatch tactical h)
-          (const h)
-          id
-      try tactical h@(Hole Unselected assms concl) = h
-      try tactical (Branch justification children) =
-        Branch justification $ map (try tactical) children
-
-      followedBy :: Tactic -> Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
-      followedBy left right derivation = do
-        left' <- dispatch left derivation
-        dispatch right left'
-
-      choice :: Tactic -> Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
-      choice left right derivation =
-        inference (dispatch left derivation)
-          (const $ dispatch right derivation)
-          return
-
-      repeat :: Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
-      repeat tactical derivation =
+      go :: Tactic -> IncompleteDerivation -> IncompleteDerivation -> Inference IncompleteDerivation
+      go tactical derivation fixed =
         inference (dispatch tactical derivation)
-          (const . return $ derivation)
+          (const . return $ fixed)
           (\d -> go tactical d derivation)
-        where
-          go :: Tactic -> IncompleteDerivation -> IncompleteDerivation -> Inference IncompleteDerivation
-          go tactical derivation fixed =
-            inference (dispatch tactical derivation)
-              (const . return $ fixed)
-              (\d -> go tactical d derivation)
 
-      dispatch :: Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
-      dispatch (Apply tactic)          derivation = apply tactic derivation
-      dispatch (FollowedBy left right) derivation = followedBy left right derivation
-      dispatch (Try tactical)          derivation = return $ try tactical derivation
-      dispatch Id                      derivation = return derivation
-      dispatch Fail                    derivation = fail ""
-      dispatch (Choice left right)     derivation = choice left right derivation
-      dispatch (Repeat tactical)       derivation = repeat tactical derivation
+  dispatch :: Tactic -> IncompleteDerivation -> Inference IncompleteDerivation
+  dispatch (Apply tactic)          derivation = apply tactic derivation
+  dispatch (FollowedBy left right) derivation = followedBy left right derivation
+  dispatch (Try tactical)          derivation = return $ try tactical derivation
+  dispatch Id                      derivation = return derivation
+  dispatch (FailWith err)          derivation = fail err
+  dispatch (Choice left right)     derivation = choice left right derivation
+  dispatch (Repeat tactical)       derivation = repeat tactical derivation
+
+  act :: ProofState -> Tactic -> Inference ProofState
+  act proofState tactical = do
+    derivation' <- dispatch (optimise tactical) $ get derivation proofState
+    return $ set derivation derivation' proofState
+
 
   -- * Printing the proof state
 

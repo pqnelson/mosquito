@@ -17,7 +17,7 @@ module Mosquito.Kernel.Term (
   -- * Some useful definitions
   Arity, Definition,
   -- * The inference monad
-  Inference, fail, inference,
+  Inference, fail, inference, userMark,
   -- * Type operator descriptions
   TypeOperatorDescription,
   isDefinedTypeOperatorDescription, isPrimitiveTypeOperatorDescription,
@@ -95,45 +95,58 @@ where
   -- * The inference monad
   --
 
+  data ITag
+    = FromKernel
+    | OutwithKernel
+      deriving Eq
+
   -- |The inference monad, an error monad used throughout Mosquito to signal
   --  success or failure of a computation.
   data Inference a
-    = Fail    String
-    | Success Int a
+    = Fail    [(ITag, String)] String
+    | Success [(ITag, String)] a
 
   -- |An elimination principle for the Inference monad.
   inference :: Inference a -> (String -> b) -> (a -> b) -> b
-  inference (Fail err)    f _ = f err
+  inference (Fail _ err)    f _ = f err
   inference (Success _ t) _ s = s t
 
   -- |A function signifying a failing computation within the Inference monad.
   --  Parameter is the error message that will be displayed when the error
   --  is encountered at top-level.
   fail :: String -> Inference a
-  fail = Fail
+  fail = Fail []
 
   instance Pretty a => Pretty (Inference a) where
-    pretty (Fail err) =
-      L.intercalate "\n" [
+    pretty (Fail trace err) =
+      L.intercalate "\n" $ [
         "*** ERROR:"
       , err
-      ]
+      , "*** CALL TRACE:"
+      ] ++ map (\(tag, t) ->
+        case tag of
+          FromKernel -> "  [Kernel call]:" ++ "\t" ++ t
+          OutwithKernel -> "[Userspace call]:" ++ "\t" ++ t
+        ) (reverse trace)
     pretty (Success count t) =
       L.intercalate "\n" [
-        unwords["Computation successful in `", show count, "' primitive inference steps:"]
+        unwords["Computation successful in `", show . length . filter (\x -> fst x == FromKernel) $ count, "' primitive inference steps:"]
       , pretty t
       ]
 
   instance Monad Inference where
-    return                  = Success 0
-    (Fail err)        >>= _ = Fail err
-    (Success count t) >>= f =
+    return                  = Success []
+    (Fail trace err)        >>= _ = Fail trace err
+    (Success trace t) >>= f =
       case f t of
-        Fail err -> Fail err
-        Success count' t -> Success (count + count') t
+        Fail trace' err -> Fail (trace ++ trace') err
+        Success trace' t -> Success (trace ++ trace') t
 
-  mark :: Inference ()
-  mark = Success 1 ()
+  kernelMark :: String -> Inference ()
+  kernelMark s = Success [(FromKernel, s)] ()
+
+  userMark :: String -> Inference ()
+  userMark s = Success [(OutwithKernel, s)] ()
 
   --
   -- * Type operator descriptions.
@@ -250,7 +263,7 @@ where
   --  not a type operator otherwise.
   fromTyOperator :: Type -> Inference (TypeOperatorDescription, [Type])
   fromTyOperator (TyOperator d args) = return (d, args)
-  fromTyOperator t = fail $ "Type `" ++ pretty t ++ "' is not a type operator."
+  fromTyOperator t = fail $ "fromTyOperator: Type `" ++ pretty t ++ "' is not a type operator."
 
   -- |Makes a type operator from a TypeOperatorDescription and a list of
   --  Type.  Fails with an error message if the input list length differs
@@ -262,7 +275,7 @@ where
         return $ TyOperator d ts
       else
         fail . unwords $ [
-          "Length of type arguments passed to `mkTyOperator' does not ",
+          "mkTyOperator: Length of type arguments passed to `mkTyOperator' does not ",
           "match the declared arity of the type description passed, ",
           "declared arity: " ++ show (typeOperatorDescriptionArity d),
           " versus: " ++ show (length ts) ++ " supplied."
@@ -301,7 +314,7 @@ where
   --  otherwise.
   fromTyVar :: Type -> Inference String
   fromTyVar (TyVar v) = return v
-  fromTyVar t         = fail $ "Type `" ++ pretty t ++ "' is not a type variable."
+  fromTyVar t         = fail $ "fromTyVar: Type `" ++ pretty t ++ "' is not a type variable."
 
   -- |Utility function for constructing a function type from two previously
   --  defined types.
@@ -313,8 +326,8 @@ where
   fromFunction :: Type -> Inference (Type, Type)
   fromFunction t@(TyOperator (PrimitiveTypeOperator f 2) [d, r])
     | f == functionQualifiedName = return (d, r)
-    | otherwise                  = fail $ "Type `" ++ pretty t ++ "' is not a function type."
-  fromFunction t = fail $ "Type `" ++ pretty t ++ "' is not a function type."
+    | otherwise                  = fail . unwords $ ["fromFunction: Type `", pretty t, "' is not a function type."]
+  fromFunction t = fail . unwords $ ["fromFunction: Type `", pretty t, "' is not a function type."]
 
   --
   -- ** Pretty printing types.
@@ -465,7 +478,7 @@ where
         return $ App l r
       else
         fail . unwords $ [
-          "Right hand term passed to `mkApp' does not have type matching",
+          "mkApp: Right hand term passed to `mkApp' does not have type matching",
           "domain type of left hand term.  Expecting `" ++ pretty dom ++ "'",
           "but found `" ++ pretty typeOfR ++ "'."
         ]
@@ -477,22 +490,22 @@ where
   -- |Deconstructs a term, succeeding if the term is a variable, failing otherwise.
   fromVar :: Term -> Inference (String, Type)
   fromVar (Var v ty) = return (v, ty)
-  fromVar t          = fail . unwords $ ["Input term `", pretty t, "' is not a variable."]
+  fromVar t          = fail . unwords $ ["fromVar: Input term `", pretty t, "' is not a variable."]
 
   -- |Deconstructs a term, succeeding if the term is a constant, failing otherwise.
   fromConst :: Term -> Inference ConstantDescription
   fromConst (Const c) = return c
-  fromConst t         = fail . unwords $ ["Input term `", pretty t, "' is not a constant."]
+  fromConst t         = fail . unwords $ ["fromConst: Input term `", pretty t, "' is not a constant."]
 
   -- |Deconstructs a term, succeeding if the term is an application, failing otherwise.
   fromApp :: Term -> Inference (Term, Term)
   fromApp (App l r) = return (l, r)
-  fromApp t         = fail . unwords $ ["Input term `", pretty t, "' is not an application."]
+  fromApp t         = fail . unwords $ ["fromApp: Input term `", pretty t, "' is not an application."]
 
   -- |Deconstructs a term, succeeding if the term is a lambda-abstraction, failing otherwise.
   fromLam :: Term -> Inference (String, Type, Term)
   fromLam (Lam a ty bdy) = return (a, ty, bdy)
-  fromLam t              = fail . unwords $ ["Input term `", pretty t, "' is not an abstraction."]
+  fromLam t              = fail . unwords $ ["fromLam: Input term `", pretty t, "' is not an abstraction."]
 
   --
   -- ** Equality
@@ -518,10 +531,10 @@ where
       mkApp left r
     else
       fail . unwords $ [
-        "Types of the left and right hand sides of the proposed equality do",
-        "not match, in a call to `mkEquality'.  Specifically, left hand side",
-        "has type `" ++ pretty typeOfL ++ "' whilst right hand side has type",
-        "`" ++ pretty typeOfR ++ "'."
+        "mkEquality: Types of the left and right hand sides of the proposed equality do"
+      , "not match, in a call to `mkEquality'.  Specifically, left hand side"
+      , unwords ["has type `", pretty typeOfL, "' whilst right hand side has type"]
+      , unwords ["`", pretty typeOfR, "'."]
       ]
 
   -- |Deconstructs a term, succeeding if the term was an equality, failing otherwise.
@@ -529,8 +542,8 @@ where
   fromEquality t@(App (App (Const d) c) r)
     | constantDescriptionQualifiedName d == equalityQualifiedName = return (c, r)
     | otherwise                                                   =
-        fail . unwords $ ["Input term `", pretty t, "' is not an equality."]
-  fromEquality t    = fail . unwords $ ["Input term `", pretty t, "' is not an equality."]
+        fail . unwords $ ["fromEquality: Input term `", pretty t, "' is not an equality."]
+  fromEquality t    = fail . unwords $ ["fromEquality: Input term `", pretty t, "' is not an equality."]
 
   --
   -- * Type checking.
@@ -548,7 +561,7 @@ where
         return rng
       else
         fail . unwords $ [
-          unwords ["Domain type of `", pretty l, "' and type of `", pretty r, "'"]
+          unwords ["typeOf: Domain type of `", pretty l, "' and type of `", pretty r, "'"]
         , unwords ["do not match.  Was expecting `", pretty lTy, "' but found"]
         , unwords ["`", pretty rTy, "'."]
         ]
@@ -807,14 +820,14 @@ where
   -- |Produces a derivation of @{} ⊢ t = t'@ given two terms @t@ and @t'@
   --  that are alpha-equivalent.
   alpha :: Term -> Term -> Inference Theorem
-  alpha t u =
+  alpha t u = do
+    kernelMark . unwords $ ["alpha:", pretty t, pretty u]
     if t == u then do
-      mark
       eq     <- mkEquality t u
       return $  Theorem DerivedSafely ([], eq)
     else
       fail . unwords $ [
-        "Input terms to `reflexivity' are not alpha-equivalent."
+        "alpha: Input terms to `reflexivity' are not alpha-equivalent."
       , unwords ["Was expecting `", pretty t, "' to be alpha-equivalent"]
       , unwords ["with `", pretty u, "'."]
       ]
@@ -824,7 +837,7 @@ where
   --  the kernel.
   symmetry :: Theorem -> Inference Theorem
   symmetry (Theorem p (hyps, concl)) = do
-    mark
+    kernelMark . unwords $ ["symmetry:", pretty concl]
     (left, right) <- fromEquality concl
     eq            <- mkEquality right left
     return $ Theorem p (hyps, eq)
@@ -833,7 +846,7 @@ where
   --  @Gamma ⊢ t = s@ and @Delta ⊢ s = u@ for all t, u and v.
   transitivity :: Theorem -> Theorem -> Inference Theorem
   transitivity (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    mark
+    kernelMark . unwords $ ["transitivity:", pretty concl, pretty concl']
     (left, right)   <- fromEquality concl
     (left', right') <- fromEquality concl'
     if mkStructuralEquality right == mkStructuralEquality left' then do
@@ -841,7 +854,7 @@ where
       return $ Theorem (p `track` q) (hyps `union` hyps', eq)
     else
       fail . unwords $ [
-        "The two derivations supplied to `transitivity' are not valid",
+        "transitivity: The two derivations supplied to `transitivity' are not valid",
         "arguments as terms are not structurally equivalent.  Was expecting",
         "term `" ++ pretty right ++ "' to be structurally-equivalent with",
         "term `" ++ pretty left' ++ "'."
@@ -850,13 +863,13 @@ where
   -- |Produces a derivation @{p} ⊢ p@ for @p@ a term of type @Bool@.
   assume :: Term -> Inference Theorem
   assume t = do
-    mark
+    kernelMark . unwords $ ["assume:", pretty t]
     typeOfT <- typeOf t
     if typeOfT == boolType then
       return $ Theorem DerivedSafely ([t], t)
     else
       fail . unwords $ [
-        "Term given to `assume' is not a formula, but has type"
+        "assume: Term given to `assume' is not a formula, but has type"
       , unwords ["`", pretty typeOfT, "'."]
       ]
 
@@ -864,7 +877,7 @@ where
   --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
   deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
   deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    mark
+    kernelMark . unwords $ ["deductAntiSymmetric:", pretty concl, pretty concl']
     eq <- mkEquality concl concl'
     let hyps'' = (delete concl hyps') `union` (delete concl' hyps)
     return $ Theorem (p `track` q) (hyps'', eq)
@@ -872,15 +885,15 @@ where
   -- |Produces a derivation of @Gamma ⊢ λx:ty. t = λx:ty. u@ given a derivation
   -- of the form @Gamma ⊢ t = u@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
-  abstract name ty (Theorem p (hyps, concl)) =
+  abstract name ty (Theorem p (hyps, concl)) = do
+    kernelMark . unwords $ ["abstract:", name, pretty ty, pretty concl]
     if not $ name `S.member` fvs hyps then do
-      mark
       (left, right) <- fromEquality concl
       eq            <- mkEquality (mkLam name ty left) (mkLam name ty right)
       return $ Theorem p (hyps, eq)
     else
       fail . unwords $ [
-        "Supplied name for lambda-abstraction to `abstract' appears free",
+        "abstract: Supplied name for lambda-abstraction to `abstract' appears free",
         "in hypotheses of supplied theorem: `" ++ name ++ "'."
       ]
 
@@ -888,14 +901,14 @@ where
   --  @Gamma ⊢ p = q@ and @Delta ⊢ p@ respectively.
   equalityModusPonens :: Theorem -> Theorem -> Inference Theorem
   equalityModusPonens (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    mark
+    kernelMark . unwords $ ["equalityModusPonens:", pretty concl, pretty concl']
     (left, right) <- fromEquality concl
     if concl' == left
       then
         return $ Theorem (p `track` q) (hyps `union` hyps', right)
       else
         fail . unwords $ [
-          "Conclusion of second theorem supplied to `equalityModusPonens' is",
+          "equalityModusPonens: Conclusion of second theorem supplied to `equalityModusPonens' is",
           "not alpha-equivalent to the left-hand side of the equality in the",
           "conclusion of the first theorem. Was expecting term alpha-equivalent",
           "to: `" ++ pretty left ++ "' but found: `" ++ pretty concl' ++ "'."
@@ -905,7 +918,7 @@ where
   --  of the form @Gamma ⊢ f = g@ and @Delta ⊢ x = y@.
   combine :: Theorem -> Theorem -> Inference Theorem
   combine (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    mark
+    kernelMark . unwords $ ["combine:", pretty concl, pretty concl']
     (f, g) <- fromEquality concl
     (x, y) <- fromEquality concl'
     left   <- mkApp f x
@@ -918,12 +931,12 @@ where
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
-    mark
+    kernelMark . unwords $ ["beta:", pretty t]
     eq   <- mkEquality t $ termSubst name b body
     return $ Theorem DerivedSafely ([], eq)
   beta t =
     fail . unwords $ [
-      "Cannot apply `beta' as term passed to function is not a valid",
+      "beta: Cannot apply `beta' as term passed to function is not a valid",
       "beta-redex, in term: `" ++ pretty t ++ "'."
     ]
 
@@ -933,35 +946,35 @@ where
   --  axiom later.
   eta :: Term -> Inference Theorem
   eta t@(Lam name _ (App left (Var v _)))
-    | v == name =
+    | v == name = do
+        kernelMark . unwords $ ["eta:", pretty t]
         if not $ v `S.member` fv left then do
-          mark
           eq <- mkEquality t left
           return $ Theorem DerivedSafely ([], eq)
         else
           fail . unwords $ [
-            unwords ["Cannot apply `eta' as variable `", name, "' appears free"]
+            unwords ["eta: Cannot apply `eta' as variable `", name, "' appears free"]
           , unwords ["in body of lambda abstraction `", pretty left, "'."]
           ]
     | otherwise =
         fail . unwords $ [
-          "Input term is not of correct shape to apply `eta':"
+          "eta: Input term is not of correct shape to apply `eta':"
         , unwords ["`", pretty t, "'."]
         ]
   eta t =
     fail . unwords $ [
-      "Cannot apply `eta' as term passed to function is not a valid"
+      "eta: Cannot apply `eta' as term passed to function is not a valid"
     , unwords ["eta-redex, in term: `", pretty t, "'."]
     ]
 
   typeInstantiation :: String -> Type -> Theorem -> Inference Theorem
   typeInstantiation dom rng (Theorem p (hyps, concl)) = do
-    mark
+    kernelMark . unwords $ ["typeInstantiation:", dom, pretty rng, pretty concl]
     return $ Theorem p (map (termTypeSubst dom rng) hyps, termTypeSubst dom rng concl)
 
   instantiation :: String -> Term -> Theorem -> Inference Theorem
   instantiation dom rng (Theorem p (hyps, concl)) = do
-    mark
+    kernelMark . unwords $ ["instantiation:", dom, pretty rng, pretty concl]
     return $ Theorem p (map (termSubst dom rng) hyps, termSubst dom rng concl)
 
   --
@@ -977,13 +990,13 @@ where
         return (defined, Theorem DerivedSafely ([], eq))
       else
         fail . unwords $ [
-          "Free type variables of definiens supplied to `primitiveNewDefinedConstant'"
+          "primitiveNewDefinedConstant: Free type variables of definiens supplied to `primitiveNewDefinedConstant'"
         , "is not a subset of the free type variables of the type of the"
         , unwords ["left hand side, in term: `", pretty t, "'."]
         ]
     else
       fail . unwords $ [
-        "Definiens supplied to `primitiveNewDefinedConstant' has free variables, in"
+        "primitiveNewDefinedConstant: Definiens supplied to `primitiveNewDefinedConstant' has free variables, in"
       , unwords ["term: `", pretty t, "'."]
       ]
 
@@ -994,6 +1007,6 @@ where
       return $ Theorem FromAxiom ([], term)
     else
       fail . unwords $ [
-        unwords ["Term `", pretty term, "' passed to `newAxiom' is not"]
+        unwords ["primitiveNewAxiom: Term `", pretty term, "' passed to `newAxiom' is not"]
       , unwords ["a proposition, instead having type `", pretty typeOfTerm, "'."]
       ]

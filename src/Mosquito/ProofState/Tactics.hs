@@ -19,7 +19,7 @@ module Mosquito.ProofState.Tactics (
     Apply      :: PreTactic -> Tactic
     FollowedBy :: Tactic    -> Tactic -> Tactic
     Id         :: Tactic
-    Fail       :: Tactic
+    FailWith   :: String    -> Tactic
     Try        :: Tactic    -> Tactic
     Choice     :: Tactic    -> Tactic -> Tactic
     Repeat     :: Tactic    -> Tactic
@@ -40,7 +40,10 @@ module Mosquito.ProofState.Tactics (
   id = Id
 
   fail :: Tactic
-  fail = Fail
+  fail = FailWith ""
+
+  failWith :: String -> Tactic
+  failWith = FailWith
 
   (>=>) :: Tactic -> Tactic -> Tactic
   (>=>) = FollowedBy
@@ -63,13 +66,15 @@ module Mosquito.ProofState.Tactics (
   -- * Rejigging tactics based on equational reasoning
 
   optimise :: Tactic -> Tactic
-  optimise (FollowedBy tactic Id)     = optimise tactic
-  optimise (FollowedBy Id     tactic) = optimise tactic
-  optimise (FollowedBy tactic Fail)   = Fail
-  optimise (FollowedBy Fail   tactic) = Fail
-  optimise (Choice     tactic Fail)   = optimise tactic
-  optimise (Choice     Fail   tactic) = optimise tactic
-  optimise (Choice     Id     tactic) = optimise tactic
-  optimise (Repeat     Id)            = Id
-  optimise (Repeat     Fail)          = Fail
-  optimise tactic                     = tactic
+  optimise (FollowedBy Id               tactic)         = optimise tactic
+  optimise (FollowedBy tactic           Id)             = optimise tactic
+  optimise (FollowedBy (FailWith err)   tactic)         = FailWith err
+  optimise (FollowedBy tactic           (FailWith err)) = FailWith err
+  optimise (Choice     (FailWith err)   tactic)         = optimise tactic
+  optimise (Choice     tactic           (FailWith err)) = optimise tactic
+  optimise (Choice     Id               tactic)         = optimise tactic
+  optimise (Repeat     Id)                              = Id
+  optimise (Repeat     (FailWith err))                  = Id
+  optimise (Repeat     (Repeat tactic))                 = optimise . Repeat . optimise $ tactic
+  optimise (Try        (Try tactic))                    = optimise . Try . optimise $ tactic
+  optimise tactic                                       = tactic

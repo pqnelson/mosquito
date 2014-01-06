@@ -9,10 +9,11 @@ module Mosquito.ProofState.Automation where
   import Mosquito.ProofState.Tactics
 
   autoSolveTactic :: TheoremTactic
-  autoSolveTactic thm = symmetrise (solvePreTactic thm)
+  autoSolveTactic thm =
+    symmetrise (solvePreTactic thm)
 
   autoBaseTactic :: Tactic
-  autoBaseTactic = repeat (apply alphaPreTactic <|> autoEtaTactic <|> autoBetaTactic)
+  autoBaseTactic = try (apply alphaPreTactic <|> autoEtaTactic <|> autoBetaTactic)
     where
       autoBetaTactic :: Tactic
       autoBetaTactic = symmetrise betaPreTactic
