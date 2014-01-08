@@ -22,7 +22,7 @@ module Mosquito.ProofState.ProofState (
   import Mosquito.Kernel.Term
 
   import Mosquito.ProofState.PreTactics
-  import Mosquito.ProofState.Tactics hiding (repeat, try, choice, apply)
+  import Mosquito.ProofState.Tactics hiding (repeat, try, apply)
 
   import Mosquito.Utility.Pretty
 
