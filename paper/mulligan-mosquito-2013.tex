@@ -185,80 +185,46 @@ Even here, if we chose to adopt more advanced Haskell type-level extensions, we 
 We chose to implement `vanilla HOL' rather than a more expressive logic.
 In these matters, we believe a certain conservatism is to be preferred, as HOL is well understood, widely implemented, relatively simple but expressive enough to capture a large amount of mathematics and computer science.
 \paragraph{Related work}
-Austin and Alexander have previously implemented `HaskHOL', the kernel of a stateless HOL with quantified types \emph{a la} System F in Haskell~\cite{austin:stateless:2013}.
-Wiedijk implemented a stateless version of HOL Light and did empirical tests on the performance differences between the two systems~\cite{wiedijk:stateless:2011}.
-To the best of our knowledge, \mosquito is the first implementation of vanilla HOL in Haskell.
-
-\section{Logic}
-\label{sect.logic}
+\begin{figure}
+    \begin{tabular}{c||p{2.5cm}|c|c}
+    ~            & Stateful Kernel                        & Stateless Kernel (ML) & Stateless Kernel (Haskell) \\ \hline\hline
+    Vanilla HOL  & HOL Light, HOL 4, ProofPower, HOL Zero & Stateless HOL         & Mosquito                   \\ \hline
+    Extended HOL & Isabelle, HOL2P, HOL$_\omega$          & ~                     & HaskHOL                    \\
+    \end{tabular}
+\caption{Related work}
+\label{fig.related.work}
+\end{figure}
+Multiple implementations of HOLs and `HOL like' systems exist.
+We survey related work in Figure~\ref{fig.related.work}.
+Two existing systems are particularly closely related.
+Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modified implementation of HOL Light with a stateless kernel.
+Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation of HOL extended with System-F style polymorphism implemented in Haskell.
 
 \section{Tactics and the proof state}
 \label{sect.tactics.proof.state}
 
-\subsection{Tactics, tacticals and stackticals}
-\label{subsect.tactics.tacticals.modifying.proof.state}
+Mosquito supports forwards-directed proof directly via application of the primitive HOL rules and axioms implemented in the Mosquito kernel.
+Backwards-directed proof, more amenable for proving complex conjectures, is supported through the use of \emph{tactics} operating on a \emph{proof state}.
 
-\section{Example forward and backward proof}
-\label{subsect.example.forward.backward.proof}
-
-We present a simple example of forwards and backwards proof in the system being used together to prove a simple conjecture.
-
-Let $\top$ be defined at type $\mathtt{Bool}$ as $\lam{b{:}\mathtt{Bool}}b = \lam{b{:}\mathtt{Bool}}b$.
-Let the universal quantifier $\forall$ be defined at type $(\alpha \rightarrow \mathtt{Bool}) \rightarrow \mathtt{Bool}$ as $\forall = \lam{P{:}\alpha \rightarrow \mathtt{Bool}}(P = \lam{a:{\alpha}}\top)$.
-Let $\mathtt{trueC}$ refer to the constant $\top$ and $\mathtt{trueD}$ refer to the defining theorem $\vdash \top = \lam{b{:}\mathtt{Bool}}b = \lam{b{:}\mathtt{Bool}}b$.
-Likewise with universal quantification and the (Haskell) constants $\mathtt{forallC}$ and $\mathtt{forallD}$.
-
-We ultimately aim to show that $\vdash \forall{t{:}\alpha}. t = t$.
-Note this is different from the primitive HOL \rulefont{refl} rule implemented in the \mosquito kernel.
-
-We first show that given $\Gamma \vdash p$ we can derive $\Gamma \vdash p = \top$.
-We do this in a forward proof style, building a derivation by direct appeal to the basic HOL axioms and rules implemented in the \mosquito system:
+A Mosquito proof state is a wrapper around an \emph{incomplete derivation}, an element of the Haskell type:
 \begin{lstlisting}
-trueEqI :: Theorem $\rightarrow$ Inference Theorem
-trueEqI theorem = do
-  let p =  conclusion theorem
-  assmP $\leftarrow$ assume p                        $\textrm{--- } \{ p \} \vdash p$
-  trueI $\leftarrow$ trueI                           $\textrm{--- } \emptyset \vdash \top$
-  das1  $\leftarrow$ deductAntiSymmetric assmP trueI $\textrm{--- } \{ p \} \vdash p = \top$
-  let c =  conclusion das1
-  assmC $\leftarrow$ assume c                        $\textrm{--- } \{ p = \top \} \vdash p = \top$
-  eqE   $\leftarrow$ trueEqE assmC                   $\textrm{--- } \{ p = \top \} \vdash p$
-  das2  $\leftarrow$ deductAntiSymmetric das1 eqE    $\textrm{--- } \emptyset \vdash p = (p = \top)$
-  symm  $\leftarrow$ symmetry das2                   $\textrm{--- } \emptyset \vdash (p = \top) = p$
-  equalityModusPonens symm theorem         $\textrm{--- } \Gamma \vdash p$
+data IncompleteDerivation
+  = Hole Selection [Theorem] Term
+  | Branch Justification [IncompleteDerivation]
 \end{lstlisting}
-Here, we have annotated the Haskell source code to make clear what is happening.
-The function $\mathtt{conclusion}$ returns the conclusion of a theorem.
-The constant $\mathtt{trueI}$ is a theorem stating $\vdash \top$.
-The function $\mathtt{trueEqE}$ transforms a derivation of $\Gamma \vdash p = \top$ into one of $\Gamma \vdash p$.
-The functions $\mathtt{assume}$, $\mathtt{deductAntiSymmetric}$, $\mathtt{symmetry}$ and $\mathtt{equalityModusPonens}$ are all basic HOL rules and axioms implemented in the \mosquito kernel.
+An incomplete derivation is a derivation tree with holes.
+Intuitively, holes (as represented by the Haskell constructor $\mathtt{Hole}$) correspond to parts of a derivation tree yet to be filled in, or rather, goals left to prove in pursuit of a complete proof of a conjecture.
+Holes are annotated with a list of assumptions local to that goal as well as the goal term itself.
 
-Using this theorem, we can derive a tactic that transforms an obligation to prove $\Gamma \vdash p = \top$ into an obligation to prove $\Gamma \vdash p$ in a backwards, tactic-driven proof:
-\begin{lstlisting}
-trueEqIPreTac :: PreTactic
-trueEqIPreTac assms concl = do
-  trueC $\leftarrow$ trueC
-  (left, right) $\leftarrow$ fromEquality concl
-  if right $\equiv$ trueC then
-    return $\$$ Refine ($\lambda$[t] $\rightarrow$ trueEqI t) [Open assms left]
-  else
-    fail "`trueEqITac'"
-trueEqITac :: Tactic
-trueEqITac =
-  apply trueEqIPreTac $\oplus$ (symmetryTac $\rightarrowtail$ apply trueEqIPreTac)
-\end{lstlisting}
+Branches (as represented by the Haskell constructor $\mathtt{Branch}$) within a derivation tree are annotated with a \emph{justification}, a function of type $\mathtt{[Theorem]} \rightarrow \mathtt{Theorem}$.
+A justification function is used to collapse a complete derivation tree into an element of type $\mathtt{Theorem}$ at the end of the proof---a forward replay of a backward proof.
+Branches are equipped with a list of subtrees.
+Intuitively, branches correspond to the backwards application of a proof rule or theorem.
+Under this scheme, a branch with an empty list of subtrees denotes a closed goal---the application of an axiom, or the closure of a goal with a previously proved theorem, say.
 
-\begin{lstlisting}
-reflexivityThm :: Inference Theorem
-reflexivityThm = do
-  let conj = ...
-  prf $\leftarrow$ conjecture "reflexivityThm" conj
-  prf $\leftarrow$ by [
-    unfoldTac forallD, reductionTac
-  , abstractTac, trueEqITac, autoBase
-  ] prf
-  qed prf
-\end{lstlisting}
+Mosquito goals may be \emph{selected} or \emph{unselected}.
+Multiple goals may be selected concurrently, or none at all.
+Backwards proof in Mosquito is progressed by attempting to apply a tactic to every selected goal in an incomplete derivation concurrently.
 
 \section{Conclusions and future work}
 \label{sect.conclusions}
