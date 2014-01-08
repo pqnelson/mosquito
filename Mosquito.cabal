@@ -54,10 +54,9 @@ library
                        Mosquito.Theories.Theory
                        Mosquito.Theories.Bool
                        Mosquito.ProofState.Automation
-                       Mosquito.ProofState.Conversions
+                       Mosquito.ProofState.PreTactics
                        Mosquito.ProofState.ProofState
                        Mosquito.ProofState.Tactics
-                       Mosquito.ProofState.Stacktics
                        Mosquito.ProofState.Unfolding
                        Mosquito.Utility.Pretty
                        Mosquito.TermUtilities

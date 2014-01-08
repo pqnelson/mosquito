@@ -54,7 +54,7 @@ module Mosquito.ProofState.PreTactics (
 
   alphaLocalEdit :: LocalEdit
   alphaLocalEdit assms concl = do
-    userMark . unwords $ ["alphaLocalEdit:", pretty concl]
+    userMark ["alphaLocalEdit:", pretty concl]
     (left, right) <- fromEquality concl
     if left == right then do
       return $ (\[] -> alpha left right, [])
@@ -73,7 +73,7 @@ module Mosquito.ProofState.PreTactics (
 
   symmetryLocalEdit :: LocalEdit
   symmetryLocalEdit assms concl = do
-    userMark . unwords $ ["symmetryLocalEdit:", pretty concl]
+    userMark ["symmetryLocalEdit:", pretty concl]
     (l, r) <- fromEquality concl
     nConcl <- mkEquality r l
     return $ (\[t] -> symmetry t, [(assms, nConcl)])
@@ -87,7 +87,7 @@ module Mosquito.ProofState.PreTactics (
 
   abstractLocalEdit :: LocalEdit
   abstractLocalEdit assms concl = do
-    userMark . unwords $ ["abstractLocalEdit:", pretty concl]
+    userMark ["abstractLocalEdit:", pretty concl]
     (l, r)             <- fromEquality concl
     (name,  ty, lBody) <- fromLam l
     (name', _,  rBody) <- fromLam r
@@ -108,7 +108,7 @@ module Mosquito.ProofState.PreTactics (
 
   combineLocalEdit :: LocalEdit
   combineLocalEdit assms concl = do
-    userMark . unwords $ ["combineLocalEdit:", pretty concl]
+    userMark ["combineLocalEdit:", pretty concl]
     (left, right)   <- fromEquality concl
     (leftL, rightL) <- fromApp left
     (leftR, rightR) <- fromApp right
@@ -125,7 +125,7 @@ module Mosquito.ProofState.PreTactics (
 
   etaLocalEdit :: LocalEdit
   etaLocalEdit _ concl = do
-    userMark . unwords $ ["etaLocalEdit:", pretty concl]
+    userMark ["etaLocalEdit:", pretty concl]
     (left, _) <- fromEquality concl
     --- XXX: test here
     thm <- eta left
@@ -146,7 +146,7 @@ module Mosquito.ProofState.PreTactics (
 
   betaLocalEdit :: LocalEdit
   betaLocalEdit _ concl = do
-    userMark . unwords $ ["betaLocalEdit:", pretty concl]
+    userMark ["betaLocalEdit:", pretty concl]
     (left, right) <- fromEquality concl
     reduced       <- betaReduce left
     if reduced == right then do
@@ -166,7 +166,7 @@ module Mosquito.ProofState.PreTactics (
 
   equalityModusPonensLocalEdit :: TermLocalEdit
   equalityModusPonensLocalEdit guess assms concl = do
-    userMark . unwords $ ["equalityModusPonensLocalEdit:", pretty guess, pretty concl]
+    userMark ["equalityModusPonensLocalEdit:", pretty guess, pretty concl]
     eq <- mkEquality guess concl
     return $ (\[t, t'] -> equalityModusPonens t t', [(assms, eq), (assms, guess)])
 
@@ -181,7 +181,7 @@ module Mosquito.ProofState.PreTactics (
 
   solveLocalEdit :: TheoremLocalEdit
   solveLocalEdit thm _ concl = do
-    userMark . unwords $ ["solveLocalEdit:", pretty thm, pretty concl]
+    userMark ["solveLocalEdit:", pretty thm, pretty concl]
     if conclusion thm == concl then
       return (\[] -> return thm, [])
     else

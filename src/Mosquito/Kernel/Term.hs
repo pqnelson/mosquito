@@ -142,11 +142,11 @@ where
         Fail trace' err -> Fail (trace ++ trace') err
         Success trace' t -> Success (trace ++ trace') t
 
-  kernelMark :: String -> Inference ()
-  kernelMark s = Success [(FromKernel, s)] ()
+  kernelMark :: [String] -> Inference ()
+  kernelMark s = Success [(FromKernel, L.intercalate "\t\t\t" s)] ()
 
-  userMark :: String -> Inference ()
-  userMark s = Success [(OutwithKernel, s)] ()
+  userMark :: [String] -> Inference ()
+  userMark s = Success [(OutwithKernel, L.intercalate "\t\t\t" s)] ()
 
   --
   -- * Type operator descriptions.
@@ -821,7 +821,7 @@ where
   --  that are alpha-equivalent.
   alpha :: Term -> Term -> Inference Theorem
   alpha t u = do
-    kernelMark . unwords $ ["alpha:", pretty t, pretty u]
+    kernelMark ["alpha:", pretty t, pretty u]
     if t == u then do
       eq     <- mkEquality t u
       return $  Theorem DerivedSafely ([], eq)
@@ -837,7 +837,7 @@ where
   --  the kernel.
   symmetry :: Theorem -> Inference Theorem
   symmetry (Theorem p (hyps, concl)) = do
-    kernelMark . unwords $ ["symmetry:", pretty concl]
+    kernelMark ["symmetry:", pretty concl]
     (left, right) <- fromEquality concl
     eq            <- mkEquality right left
     return $ Theorem p (hyps, eq)
@@ -846,7 +846,7 @@ where
   --  @Gamma ⊢ t = s@ and @Delta ⊢ s = u@ for all t, u and v.
   transitivity :: Theorem -> Theorem -> Inference Theorem
   transitivity (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    kernelMark . unwords $ ["transitivity:", pretty concl, pretty concl']
+    kernelMark ["transitivity:", pretty concl, pretty concl']
     (left, right)   <- fromEquality concl
     (left', right') <- fromEquality concl'
     if mkStructuralEquality right == mkStructuralEquality left' then do
@@ -863,7 +863,7 @@ where
   -- |Produces a derivation @{p} ⊢ p@ for @p@ a term of type @Bool@.
   assume :: Term -> Inference Theorem
   assume t = do
-    kernelMark . unwords $ ["assume:", pretty t]
+    kernelMark ["assume:", pretty t]
     typeOfT <- typeOf t
     if typeOfT == boolType then
       return $ Theorem DerivedSafely ([t], t)
@@ -877,7 +877,7 @@ where
   --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
   deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
   deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    kernelMark . unwords $ ["deductAntiSymmetric:", pretty concl, pretty concl']
+    kernelMark ["deductAntiSymmetric:", pretty concl, pretty concl']
     eq <- mkEquality concl concl'
     let hyps'' = (delete concl hyps') `union` (delete concl' hyps)
     return $ Theorem (p `track` q) (hyps'', eq)
@@ -886,7 +886,7 @@ where
   -- of the form @Gamma ⊢ t = u@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
   abstract name ty (Theorem p (hyps, concl)) = do
-    kernelMark . unwords $ ["abstract:", name, pretty ty, pretty concl]
+    kernelMark ["abstract:", name, pretty ty, pretty concl]
     if not $ name `S.member` fvs hyps then do
       (left, right) <- fromEquality concl
       eq            <- mkEquality (mkLam name ty left) (mkLam name ty right)
@@ -901,7 +901,7 @@ where
   --  @Gamma ⊢ p = q@ and @Delta ⊢ p@ respectively.
   equalityModusPonens :: Theorem -> Theorem -> Inference Theorem
   equalityModusPonens (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    kernelMark . unwords $ ["equalityModusPonens:", pretty concl, pretty concl']
+    kernelMark ["equalityModusPonens:", pretty concl, pretty concl']
     (left, right) <- fromEquality concl
     if concl' == left
       then
@@ -918,7 +918,7 @@ where
   --  of the form @Gamma ⊢ f = g@ and @Delta ⊢ x = y@.
   combine :: Theorem -> Theorem -> Inference Theorem
   combine (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
-    kernelMark . unwords $ ["combine:", pretty concl, pretty concl']
+    kernelMark ["combine:", pretty concl, pretty concl']
     (f, g) <- fromEquality concl
     (x, y) <- fromEquality concl'
     left   <- mkApp f x
@@ -931,7 +931,7 @@ where
   --  as we permit full beta-equivalence in the kernel via this rule.
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
-    kernelMark . unwords $ ["beta:", pretty t]
+    kernelMark ["beta:", pretty t]
     eq   <- mkEquality t $ termSubst name b body
     return $ Theorem DerivedSafely ([], eq)
   beta t =
@@ -947,7 +947,7 @@ where
   eta :: Term -> Inference Theorem
   eta t@(Lam name _ (App left (Var v _)))
     | v == name = do
-        kernelMark . unwords $ ["eta:", pretty t]
+        kernelMark ["eta:", pretty t]
         if not $ v `S.member` fv left then do
           eq <- mkEquality t left
           return $ Theorem DerivedSafely ([], eq)
@@ -969,12 +969,12 @@ where
 
   typeInstantiation :: String -> Type -> Theorem -> Inference Theorem
   typeInstantiation dom rng (Theorem p (hyps, concl)) = do
-    kernelMark . unwords $ ["typeInstantiation:", dom, pretty rng, pretty concl]
+    kernelMark ["typeInstantiation:", dom, pretty rng, pretty concl]
     return $ Theorem p (map (termTypeSubst dom rng) hyps, termTypeSubst dom rng concl)
 
   instantiation :: String -> Term -> Theorem -> Inference Theorem
   instantiation dom rng (Theorem p (hyps, concl)) = do
-    kernelMark . unwords $ ["instantiation:", dom, pretty rng, pretty concl]
+    kernelMark ["instantiation:", dom, pretty rng, pretty concl]
     return $ Theorem p (map (termSubst dom rng) hyps, termSubst dom rng concl)
 
   --

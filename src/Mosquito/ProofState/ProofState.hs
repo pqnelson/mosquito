@@ -133,6 +133,32 @@ module Mosquito.ProofState.ProofState (
     derivation' <- dispatch (optimise tactical) $ get derivation proofState
     return $ set derivation derivation' proofState
 
+  debug :: ProofState -> Tactic -> (Inference ProofState, Maybe Tactic)
+  debug proofState Id             = (return proofState, Nothing)
+  debug proofState (FailWith err) = (fail err, Nothing)
+  debug proofState (FollowedBy left right) =
+    inference (act proofState left)
+      (\err   -> (fail err, Nothing))
+      (\state -> (return state, Just right))
+  debug proofState (Choice left right) =
+    inference (act proofState left)
+      (const (return proofState, Just right))
+      (\state -> (return state, Nothing))
+  debug proofState (Try tactical) =
+    inference (act proofState tactical)
+      (const (return proofState, Nothing))
+      (\state -> (return state, Nothing))
+  debug proofState (Repeat tactical) =
+    inference (act proofState tactical)
+      (const (return proofState, Nothing))
+      (\state -> go state proofState tactical)
+    where
+      go :: ProofState -> ProofState -> Tactic -> (Inference ProofState, Maybe Tactic)
+      go new fixed tactic =
+        inference (act new tactic)
+          (const (return fixed, Nothing))
+          (\state -> (return state, Just tactic))
+
 
   -- * Printing the proof state
 

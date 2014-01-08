@@ -51,6 +51,7 @@ module Mosquito.Theories.Bool where
   -- ** Logical truth
   --
 
+  -- T = \a : Bool. a = \a : Bool. a
   trueDecl :: Inference (Term, Theorem)
   trueDecl = do
     let name =  mkQualifiedName ["Mosquito", "Bool"] "true"
@@ -71,12 +72,12 @@ module Mosquito.Theories.Bool where
     trueD <- trueD
     conj  <- mkConjecture "trueI" trueC
     conj  <- act conj . unfoldTactic $ trueD
-    conj  <- act conj . try . apply $ alphaPreTactic
     qed conj
 
+{-
   trueILocalEdit :: LocalEdit
   trueILocalEdit _ concl = do
-    userMark . unwords $ ["trueILocalEdit:", pretty concl]
+    userMark ["trueILocalEdit:", pretty concl]
     trueC <- trueC
     if concl == trueC then
       return (\[] -> trueI, [])
@@ -99,7 +100,7 @@ module Mosquito.Theories.Bool where
 
   trueEqELocalEdit :: LocalEdit
   trueEqELocalEdit assms concl = do
-    userMark . unwords $ ["trueEqELocalEdit:", pretty concl]
+    userMark ["trueEqELocalEdit:", pretty concl]
     trueC <- trueC
     eq <- mkEquality concl trueC
     return (\[t] -> trueEqE t, [(assms, eq)])
@@ -124,7 +125,7 @@ module Mosquito.Theories.Bool where
 
   trueEqILocalEdit :: LocalEdit
   trueEqILocalEdit assms concl = do
-    userMark . unwords $ ["trueEqILocalEdit:", pretty concl]
+    userMark ["trueEqILocalEdit:", pretty concl]
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
@@ -380,4 +381,5 @@ module Mosquito.Theories.Bool where
     disjunctionC <- disjunctionC
     pre          <- mkApp disjunctionC left
     mkApp pre right
+-}
 -}
