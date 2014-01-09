@@ -66,7 +66,7 @@ module Mosquito.Kernel.Term (
   assume, equalityModusPonens, deductAntiSymmetric,
   typeInstantiation, instantiation,
   -- * Extending the logic
-  primitiveNewDefinedConstant, primitiveNewAxiom
+  primitiveNewDefinedConstant, primitiveNewDefinedType, primitiveNewAxiom
 )
 where
 
@@ -478,9 +478,9 @@ where
         return $ App l r
       else
         fail . unwords $ [
-          "mkApp: Right hand term passed to `mkApp' does not have type matching",
-          "domain type of left hand term.  Expecting `" ++ pretty dom ++ "'",
-          "but found `" ++ pretty typeOfR ++ "'."
+          unwords ["mkApp: Right hand term `", pretty r, "'"]
+        , unwords ["does not have type matching domain type of left hand term: `", pretty l, "'"]
+        , unwords ["Expecting `", pretty dom, "' but found `", pretty typeOfR, "'."]
         ]
 
   -- |Makes a lambda-abstraction.
@@ -999,6 +999,25 @@ where
         "primitiveNewDefinedConstant: Definiens supplied to `primitiveNewDefinedConstant' has free variables, in"
       , unwords ["term: `", pretty t, "'."]
       ]
+
+  primitiveNewDefinedType :: QualifiedName -> Theorem -> Inference (Theorem, Theorem)
+  primitiveNewDefinedType name definingTheorem
+    | hypotheses definingTheorem == [] = do
+        kernelMark ["primitiveNewDefinedType:", pretty name, pretty definingTheorem]
+        (predicate, argument) <- fromApp . conclusion $ definingTheorem
+        let fvP = fv predicate
+        if fvP == S.empty then
+          undefined
+        else
+          fail . unwords $ [
+            unwords ["primitiveNewDefinedType: defining predicate `", pretty predicate, "' is"]
+          , "not closed."
+          ]
+    | otherwise =
+        fail . unwords $ [
+          unwords ["primitiveNewDefinedType: defining theorem for type `", pretty name, "' has"]
+        , unwords ["assumptions, namely: ", unwords . map pretty . hypotheses $ definingTheorem]
+        ]
 
   primitiveNewAxiom :: Term -> Inference Theorem
   primitiveNewAxiom term = do
