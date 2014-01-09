@@ -177,7 +177,8 @@ module Mosquito.Theories.PrimitiveCore (
   mkForall :: String -> Type -> Term -> Inference Term
   mkForall name ty body = do
     forallC  <- forallC
-    let inst =  termTypeSubst "α" ty forallC
+    let subst = mkSubstitution [("α", ty)]
+    let inst =  termTypeSubst subst forallC
     let lam  =  mkLam name ty body
     mkApp inst lam
 
@@ -189,7 +190,8 @@ module Mosquito.Theories.PrimitiveCore (
   falseDecl = do
     let name =  mkQualifiedName ["Mosquito", "Bool"] "false"
     forallC  <- forallC
-    let inst =  termTypeSubst "α" boolType forallC
+    let subst = mkSubstitution [("α", boolType)]
+    let inst =  termTypeSubst subst forallC
     let body =  mkLam "a" boolType (mkVar "a" boolType)
     def      <- mkApp inst body
     primitiveNewDefinedConstant name def boolType
@@ -402,9 +404,10 @@ module Mosquito.Theories.PrimitiveCore (
   --  typed variable.
   mkExists :: String -> Type -> Term -> Inference Term
   mkExists name ty body = do
-    existsC  <- existsC
-    let inst =  termTypeSubst "α" ty existsC
-    let lam  =  mkLam name ty body
+    existsC   <- existsC
+    let subst =  mkSubstitution [("α", ty)]
+    let inst  =  termTypeSubst subst existsC
+    let lam   =  mkLam name ty body
     mkApp inst lam
 
   --
@@ -472,7 +475,8 @@ module Mosquito.Theories.PrimitiveCore (
     let p        =  mkVar "P" (mkFunctionType alphaType boolType)
     let y        =  mkVar "y" gammaType
     injectiveC   <- injectiveC
-    let inj      =  termTypeSubst "β" alphaType $ termTypeSubst "α" gammaType injectiveC
+    let subst    =  mkSubstitution [("β", alphaType), ("α", gammaType)]
+    let inj      =  termTypeSubst subst injectiveC
     repy         <- mkApp rep y
     xrepy        <- mkEquality x repy
     yxrepy       <- mkExists "y" gammaType xrepy

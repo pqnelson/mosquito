@@ -51,6 +51,8 @@ module Mosquito.Kernel.Term (
   -- ** Equality within the logic
   equality, isEquality,
   fromEquality, mkEquality,
+  -- * Substitutions
+  Substitution, mkSubstitution,
   -- ** Type substitutions
   typeSubst,
   -- ** Term substitutions
@@ -527,7 +529,8 @@ where
     typeOfL <- typeOf l
     typeOfR <- typeOf r
     if typeOfL == typeOfR then do
-      left <- mkApp (termTypeSubst "α" typeOfL equality) l
+      let subst = mkSubstitution [("α", typeOfL)]
+      left <- mkApp (termTypeSubst subst equality) l
       mkApp left r
     else
       fail . unwords $ [
@@ -573,29 +576,52 @@ where
   -- * Substitutions and utility functions
   --
 
+  newtype Substitution a
+    = Substitution [(String, a)]
+
+  instance Pretty a => Pretty (Substitution a) where
+    pretty (Substitution []) = "id"
+    pretty (Substitution ss) = "[" ++ body ++ "]"
+      where
+        body :: String
+        body = L.intercalate ", " $ map (\(d, r) -> d ++ " := " ++ pretty r) ss
+
+  mkSubstitution :: [(String, a)] -> Substitution a
+  mkSubstitution = Substitution
+
+  domain :: Ord a => Substitution a -> S.Set String
+  domain (Substitution ss) = S.fromList . map fst $ ss
+
+  range :: Ord a => Substitution a -> S.Set a
+  range (Substitution ss) = S.fromList . map snd $ ss
+
+  applySubst :: Substitution a -> String -> a -> a
+  applySubst (Substitution []) dom def = def
+  applySubst (Substitution ((dom, rng):xs)) dom' def
+    | dom == dom' = rng
+    | otherwise   = applySubst (Substitution xs) dom' def
+
   -- |Perform a type substitution replacing type variables whose names match
   --  the first argument with the second argument.
-  typeSubst :: String -> Type -> Type -> Type
-  typeSubst dom rng (TyVar v)
-    | dom == v  = rng
-    | otherwise = TyVar v
-  typeSubst dom rng (TyOperator descr args) =
-    TyOperator descr . map (typeSubst dom rng) $ args
+  typeSubst :: Substitution Type -> Type -> Type
+  typeSubst subst t@(TyVar v) = applySubst subst v t
+  typeSubst subst (TyOperator descr args) =
+    TyOperator descr . map (typeSubst subst) $ args
 
   -- |Performs a type substitution on all types decorating the term (at lambda
   --  binding sites, within constant declarations and on decorating types
   --  appearing on variables).
-  termTypeSubst :: String -> Type -> Term -> Term
-  termTypeSubst dom rng (Var v ty) = Var v $ typeSubst dom rng ty
-  termTypeSubst dom rng (Const c)  = Const . go $ c
+  termTypeSubst :: Substitution Type -> Term -> Term
+  termTypeSubst subst (Var v ty) = Var v $ typeSubst subst ty
+  termTypeSubst subst (Const c)  = Const . go $ c
     where
       go :: ConstantDescription -> ConstantDescription
-      go (PrimitiveConstant n ty) = PrimitiveConstant n $ typeSubst dom rng ty
-      go (DefinedConstant n ty d) = DefinedConstant n (typeSubst dom rng ty) d
-  termTypeSubst dom rng (App l r)  =
-    App (termTypeSubst dom rng l) $ termTypeSubst dom rng r
-  termTypeSubst dom rng (Lam a ty body) =
-    Lam a (typeSubst dom rng ty) $ termTypeSubst dom rng body
+      go (PrimitiveConstant n ty) = PrimitiveConstant n $ typeSubst subst ty
+      go (DefinedConstant n ty d) = DefinedConstant n (typeSubst subst ty) d
+  termTypeSubst subst (App l r)  =
+    App (termTypeSubst subst l) $ termTypeSubst subst r
+  termTypeSubst subst (Lam a ty body) =
+    Lam a (typeSubst subst ty) $ termTypeSubst subst body
 
   fresh :: S.Set String -> String
   fresh = go "f" 0
@@ -607,17 +633,25 @@ where
 
   -- |Performs a capture-avoiding term substitution with fresh-name generation
   --  if necessary.
-  termSubst :: String -> Term -> Term -> Term
-  termSubst dom rng (Var v ty)
-    | dom == v  = rng
-    | otherwise = Var v ty
-  termSubst _ _ (Const c) = Const c
-  termSubst dom rng (App l r) = App (termSubst dom rng l) (termSubst dom rng r)
-  termSubst dom rng t@(Lam a ty body)
-    | a == dom || a `S.member` fv rng =
-      let freshName = fresh $ S.unions [S.singleton dom, variables rng, variables t] in
-        Lam freshName ty $ termSubst dom rng $ permute a freshName body
-    | otherwise = Lam a ty $ termSubst dom rng body
+  termSubst :: Substitution Term -> Term -> Term
+  termSubst subst t@(Var v ty)      = applySubst subst v t
+  termSubst _ (Const c)             = Const c
+  termSubst subst (App l r)         = App (termSubst subst l) (termSubst subst r)
+  termSubst subst t@(Lam a ty body) =
+      if a `S.member` substVariables subst then
+        Lam freshName ty . termSubst subst $ permute a freshName body
+      else
+        Lam a ty . termSubst subst $ body
+    where
+
+      substVariables :: Substitution Term -> S.Set String
+      substVariables (Substitution []) = S.empty
+      substVariables (Substitution ((dom, rng):ss)) =
+        S.unions [S.singleton dom, variables rng, substVariables . Substitution $ ss]
+
+      freshName :: String
+      freshName = fresh $ S.unions [variables t, substVariables subst]
+        
 
   --
   -- ** Alpha-equivalence on terms.
@@ -932,7 +966,8 @@ where
   beta :: Term -> Inference Theorem
   beta t@(App (Lam name _ body) b) = do
     kernelMark ["beta:", pretty t]
-    eq   <- mkEquality t $ termSubst name b body
+    let subst = mkSubstitution [(name, b)]
+    eq   <- mkEquality t $ termSubst subst body
     return $ Theorem DerivedSafely ([], eq)
   beta t =
     fail . unwords $ [
@@ -967,15 +1002,15 @@ where
     , unwords ["eta-redex, in term: `", pretty t, "'."]
     ]
 
-  typeInstantiation :: String -> Type -> Theorem -> Inference Theorem
-  typeInstantiation dom rng (Theorem p (hyps, concl)) = do
-    kernelMark ["typeInstantiation:", dom, pretty rng, pretty concl]
-    return $ Theorem p (map (termTypeSubst dom rng) hyps, termTypeSubst dom rng concl)
+  typeInstantiation :: Substitution Type -> Theorem -> Inference Theorem
+  typeInstantiation subst (Theorem p (hyps, concl)) = do
+    kernelMark ["typeInstantiation:", pretty subst, pretty concl]
+    return $ Theorem p (map (termTypeSubst subst) hyps, termTypeSubst subst concl)
 
-  instantiation :: String -> Term -> Theorem -> Inference Theorem
-  instantiation dom rng (Theorem p (hyps, concl)) = do
-    kernelMark ["instantiation:", dom, pretty rng, pretty concl]
-    return $ Theorem p (map (termSubst dom rng) hyps, termSubst dom rng concl)
+  instantiation :: Substitution Term -> Theorem -> Inference Theorem
+  instantiation subst (Theorem p (hyps, concl)) = do
+    kernelMark ["instantiation:", pretty subst, pretty concl]
+    return $ Theorem p (map (termSubst subst) hyps, termSubst subst concl)
 
   --
   -- * Extending the logic

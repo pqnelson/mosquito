@@ -9,8 +9,6 @@ module Mosquito.DerivedRules (
   combineL, combineR,
   -- * Lambda-abstraction
   abstracts,
-  -- * Substitutions
-  instantiations, typeInstantiations,
   -- * Reductions
   betas
 ) where
@@ -52,22 +50,6 @@ module Mosquito.DerivedRules (
     foldr (\(name, ty) prev -> do
       nPrev <- prev
       abstract name ty nPrev) (return thm) xs
-
-  -- |Generalised for of "instantiation", performing many instantiations one
-  --  after the other.
-  instantiations :: [(String, Term)] -> Theorem -> Inference Theorem
-  instantiations subst thm =
-    foldr (\(name, ty) prev -> do
-      nPrev <- prev
-      instantiation name ty nPrev) (return thm) subst
-
-  -- |Generalised for of "typeInstantiation", performing many type instantiations
-  --  one after the other.
-  typeInstantiations :: [(String, Type)] -> Theorem -> Inference Theorem
-  typeInstantiations subst thm =
-    foldr (\(name, ty) prev -> do
-      nPrev <- prev
-      typeInstantiation name ty nPrev) (return thm) subst
 
   betas :: Term -> Inference Theorem
   betas = go . unfoldAppsL

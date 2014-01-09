@@ -142,7 +142,8 @@ module Mosquito.ProofState.PreTactics (
   betaReduce t = do
     (left, right) <- fromApp t
     (n, _, body)  <- fromLam left
-    return $ termSubst n right body
+    let subst     =  mkSubstitution [(n, right)]
+    return $ termSubst subst body
 
   betaLocalEdit :: LocalEdit
   betaLocalEdit _ concl = do
