@@ -1,6 +1,6 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
-module Mosquito.Theories.PrimitiveCore (
+module Mosquito.Theories.Boolean (
   -- * Utility functions and definitions
   binaryConnectiveType, quantifierType,
   constantOfDecl, theoremOfDecl,
@@ -11,27 +11,31 @@ module Mosquito.Theories.PrimitiveCore (
   trueEqI, trueEqILocalEdit, trueEqIPreTactic,
   trueEqE, trueEqELocalEdit, trueEqEPreTactic,
   -- ** Universal quantification
-  forallDecl, forallC, forallD, mkForall,
+  forallDecl, forallC, forallD,
+  mkForall, fromForall,
   -- ** Logical falsity
   falseDecl, falseC, falseD,
   -- ** Conjunction
   conjunctionDecl, conjunctionC, conjunctionD,
+  mkConjunction, fromConjunction,
   -- ** Material implication
-  implicationDecl, implicationC, implicationD, mkImplication,
+  implicationDecl, implicationC, implicationD,
+  mkImplication, fromImplication,
   -- ** Negation
-  negationDecl, negationC, negationD, mkNegation,
+  negationDecl, negationC, negationD,
+  mkNegation, fromNegation,
   -- ** Disjunction
-  disjunctionDecl, disjunctionC, disjunctionD, mkDisjunction,
+  disjunctionDecl, disjunctionC, disjunctionD,
+  mkDisjunction, fromDisjunction,
   -- ** Existential quantification
-  existsDecl, existsC, existsD, mkExists,
-  -- * For defining new types
-  injectiveDecl, injectiveC, injectiveD,
-  primitiveTypeDefinitionDecl, primitiveTypeDefinitionC, primitiveTypeDefinitionD
+  existsDecl, existsC, existsD,
+  mkExists, fromExists,
+  -- ** If, and only if
+  iffDecl, iffC, iffD,
+  mkIff, fromIff
 ) where
 
   import Prelude hiding (fail, repeat)
-
-  import Control.Monad hiding (fail, (>=>))
 
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
@@ -42,29 +46,10 @@ module Mosquito.Theories.PrimitiveCore (
   import Mosquito.ProofState.Tactics
   import Mosquito.ProofState.Unfolding
 
+  import Mosquito.Theories.Utility
+
   import Mosquito.Utility.Extlib
   import Mosquito.Utility.Pretty
-
-  --
-  -- * Utility functions and definitions
-  --
-
-  binaryConnectiveType :: Type
-  binaryConnectiveType =
-    mkFunctionType boolType (mkFunctionType boolType boolType)
-
-  quantifierType :: Type
-  quantifierType = mkFunctionType (mkFunctionType alphaType boolType) boolType
-
-  constantOfDecl :: Inference (Term, a) -> Inference Term
-  constantOfDecl = liftM fst
-
-  theoremOfDecl :: Inference (a, Theorem) -> Inference Theorem
-  theoremOfDecl = liftM snd
-
-  --
-  -- * Logic!
-  --
 
   --
   -- ** Logical truth
@@ -182,6 +167,11 @@ module Mosquito.Theories.PrimitiveCore (
     let lam  =  mkLam name ty body
     mkApp inst lam
 
+  fromForall :: Term -> Inference (String, Type, Term)
+  fromForall term = do
+    (forallC, body) <- fromApp term
+    fromLam body
+
   --
   -- ** Logical falsity
   --
@@ -232,6 +222,12 @@ module Mosquito.Theories.PrimitiveCore (
     conjunctionC <- conjunctionC
     pre          <- mkApp conjunctionC left
     mkApp pre right
+
+  fromConjunction :: Term -> Inference (Term, Term)
+  fromConjunction term = do
+    (pre, right)  <- fromApp term
+    (conjC, left) <- fromApp pre
+    return (left, right)
 
   {- conjunctionI :: Inference Theorem
   conjunctionIThm left right = Mosquito.Utility.Pretty.putStrLn $ do
@@ -310,6 +306,12 @@ module Mosquito.Theories.PrimitiveCore (
     pre          <- mkApp implicationC left
     mkApp pre right
 
+  fromImplication :: Term -> Inference (Term, Term)
+  fromImplication term = do
+    (pre, right) <- fromApp term
+    (impC, left) <- fromApp pre
+    return (left, right)
+
   --
   -- ** Negation
   --
@@ -337,6 +339,11 @@ module Mosquito.Theories.PrimitiveCore (
   mkNegation body = do
     negationC <- negationC
     mkApp negationC body
+
+  fromNegation :: Term -> Inference Term
+  fromNegation term = do
+    (negC, body) <- fromApp term
+    return body
 
   --
   -- ** Disjunction
@@ -371,6 +378,12 @@ module Mosquito.Theories.PrimitiveCore (
     disjunctionC <- disjunctionC
     pre          <- mkApp disjunctionC left
     mkApp pre right
+
+  fromDisjunction :: Term -> Inference (Term, Term)
+  fromDisjunction term = do
+    (pre, right) <- fromApp term
+    (disjC, left) <- fromApp pre
+    return (left, right)
 
   --
   -- ** Existential quantification
@@ -410,6 +423,11 @@ module Mosquito.Theories.PrimitiveCore (
     let lam   =  mkLam name ty body
     mkApp inst lam
 
+  fromExists :: Term -> Inference (String, Type, Term)
+  fromExists term = do
+    (quantifier, lam) <- fromApp term
+    fromLam lam
+
   --
   -- ** If and only if
   --
@@ -439,59 +457,8 @@ module Mosquito.Theories.PrimitiveCore (
     left <- mkApp iffC left
     mkApp left right
 
-  --
-  -- * For defining new types
-  --
-
-  injectiveDecl :: Inference (Term, Theorem)
-  injectiveDecl = do
-    let name     = mkQualifiedName ["Mosquito", "Function"] "injective"
-    let betaType = mkTyVar "β"
-    let x        = mkVar "x" alphaType
-    let y        = mkVar "y" alphaType
-    let f        = mkVar "f" (mkFunctionType alphaType betaType)
-    fx           <- mkApp f x
-    fy           <- mkApp f y
-    fxfy         <- mkEquality fx fy
-    xy           <- mkEquality x y
-    imp          <- mkImplication fxfy xy
-    ax           <- mkForall "x" alphaType imp
-    bx           <- mkForall "y" alphaType ax
-    let body     =  mkLam "f" (mkFunctionType alphaType betaType) bx
-    primitiveNewDefinedConstant name body $ mkFunctionType (mkFunctionType alphaType betaType) boolType
-
-  injectiveC :: Inference Term
-  injectiveC = constantOfDecl injectiveDecl
-
-  injectiveD :: Inference Theorem
-  injectiveD = theoremOfDecl injectiveDecl
-
-  primitiveTypeDefinitionDecl :: Inference (Term, Theorem)
-  primitiveTypeDefinitionDecl = do
-    let name     =  mkQualifiedName ["Mosquito", "Core"] "primitiveTypeDefinition"
-    let gammaType = mkTyVar "γ"
-    let rep      =  mkVar "representation" (mkFunctionType gammaType alphaType)
-    let x        =  mkVar "x" alphaType
-    let p        =  mkVar "P" (mkFunctionType alphaType boolType)
-    let y        =  mkVar "y" gammaType
-    injectiveC   <- injectiveC
-    let subst    =  mkSubstitution [("β", alphaType), ("α", gammaType)]
-    let inj      =  termTypeSubst subst injectiveC
-    repy         <- mkApp rep y
-    xrepy        <- mkEquality x repy
-    yxrepy       <- mkExists "y" gammaType xrepy
-    px           <- mkApp p x
-    injrep       <- mkApp inj rep
-    pximpyx      <- mkIff px yxrepy
-    aximpyx      <- mkForall "x" alphaType pximpyx
-    body         <- mkConjunction injrep aximpyx
-    let lrep     =  mkLam "representation" (mkFunctionType gammaType alphaType) body
-    let prep     =  mkLam "P" (mkFunctionType alphaType boolType) lrep
-    let ty       =  mkFunctionType (mkFunctionType alphaType boolType) $ mkFunctionType (mkFunctionType gammaType alphaType) boolType
-    primitiveNewDefinedConstant name prep ty
-
-  primitiveTypeDefinitionC :: Inference Term
-  primitiveTypeDefinitionC = constantOfDecl primitiveTypeDefinitionDecl
-
-  primitiveTypeDefinitionD :: Inference Theorem
-  primitiveTypeDefinitionD = theoremOfDecl primitiveTypeDefinitionDecl
+  fromIff :: Term -> Inference (Term, Term)
+  fromIff body = do
+    (pre, right) <- fromApp body
+    (iffC, left) <- fromApp pre
+    return (left, right)

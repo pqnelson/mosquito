@@ -52,7 +52,9 @@ library
                        Mosquito.Kernel.QualifiedName
                        Mosquito.DerivedRules
                        Mosquito.Theories.Theory
-                       Mosquito.Theories.PrimitiveCore
+                       Mosquito.Theories.Boolean
+                       Mosquito.Theories.Function
+                       Mosquito.Theories.Utility
                        Mosquito.ProofState.Automation
                        Mosquito.ProofState.PreTactics
                        Mosquito.ProofState.ProofState
