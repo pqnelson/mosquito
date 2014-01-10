@@ -15,7 +15,7 @@
 --  approach).
 module Mosquito.Kernel.Term (
   -- * Some useful definitions
-  Arity, Definition,
+  Arity,
   -- * The inference monad
   Inference, fail, inference, userMark,
   -- * Type operator descriptions
@@ -35,6 +35,7 @@ module Mosquito.Kernel.Term (
   -- * Constant descriptions
   ConstantDescription,
   isDefinedConstantDescription, isPrimitiveConstantDescription,
+  isTypeRepresentationConstantDescription, isTypeAbstractionConstantDescription,
   constantDescriptionType, constantDescriptionQualifiedName, constantDescriptionDefinition,
   equalityType, equalityQualifiedName, equalityDescription,
   -- * HOL terms
@@ -90,9 +91,6 @@ where
   -- |Type representing the arity of type operators and constants.
   type Arity = Int
 
-  -- |Type representing definitions of defined types and constants.
-  type Definition = Term
-
   --
   -- * The inference monad
   --
@@ -136,6 +134,7 @@ where
       , pretty t
       ]
 
+  -- Probably not a monad?  Look at this closer.
   instance Monad Inference where
     return                  = Success []
     (Fail trace err)        >>= _ = Fail trace err
@@ -159,7 +158,7 @@ where
   --  and the function space arrow) or are defined.  Defined type operators
   --  carry a definition around with them.
   data TypeOperatorDescription
-    = DefinedTypeOperator   QualifiedName Arity Definition
+    = DefinedTypeOperator   QualifiedName Arity Theorem
     | PrimitiveTypeOperator QualifiedName Arity
     deriving(Eq, Show, Ord)
 
@@ -192,7 +191,7 @@ where
   -- |Retrieves the definition of a defined type operator description.  If the
   --  description is a primitive type operator, then the function returns 
   --  'Nothing'.
-  typeOperatorDescriptionDefinition :: TypeOperatorDescription -> Maybe Definition
+  typeOperatorDescriptionDefinition :: TypeOperatorDescription -> Maybe Theorem
   typeOperatorDescriptionDefinition (DefinedTypeOperator _ _ d) = return d
   typeOperatorDescriptionDefinition PrimitiveTypeOperator{}     = Nothing
 
@@ -203,11 +202,11 @@ where
 
   -- |The name of the primitive HOL bool type.
   boolQualifiedName :: QualifiedName
-  boolQualifiedName = mkQualifiedName ["Mosquito"] "Bool"
+  boolQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "Bool"
 
   -- |The name of the primitive HOL function space type operator.
   functionQualifiedName :: QualifiedName
-  functionQualifiedName = mkQualifiedName ["Mosquito"] "_→_"
+  functionQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "_→_"
 
   -- |The description of the primitive HOL bool type.
   boolDescription :: TypeOperatorDescription
@@ -363,8 +362,10 @@ where
   --  constants of the same name but defined in different proof assistant states
   --  cannot creep into the system.
   data ConstantDescription
-    = DefinedConstant   QualifiedName Type Definition
-    | PrimitiveConstant QualifiedName Type
+    = DefinedConstant            QualifiedName Type  Term
+    | PrimitiveConstant          QualifiedName Type
+    | TypeAbstractionConstant    QualifiedName QualifiedName Arity Type Theorem
+    | TypeRepresentationConstant QualifiedName QualifiedName Arity Type Theorem
     deriving(Eq, Show, Ord)
 
   --
@@ -381,21 +382,33 @@ where
   isPrimitiveConstantDescription PrimitiveConstant{} = True
   isPrimitiveConstantDescription _                   = False
 
+  isTypeAbstractionConstantDescription :: ConstantDescription -> Bool
+  isTypeAbstractionConstantDescription TypeAbstractionConstant{} = True
+  isTypeAbstractionConstantDescription _                         = False
+
+  isTypeRepresentationConstantDescription :: ConstantDescription -> Bool
+  isTypeRepresentationConstantDescription TypeRepresentationConstant{} = True
+  isTypeRepresentationConstantDescription _                            = False
+
   -- |Returns the qualified name of a ConstantDescription.
   constantDescriptionQualifiedName :: ConstantDescription -> QualifiedName
-  constantDescriptionQualifiedName (DefinedConstant n _ _) = n
-  constantDescriptionQualifiedName (PrimitiveConstant n _) = n
+  constantDescriptionQualifiedName (DefinedConstant n _ _)                = n
+  constantDescriptionQualifiedName (PrimitiveConstant n _)                = n
+  constantDescriptionQualifiedName (TypeRepresentationConstant n _ _ _ _) = n
+  constantDescriptionQualifiedName (TypeAbstractionConstant n _ _ _ _)    = n
 
   -- |Returns the type of a ConstantDescription.
   constantDescriptionType :: ConstantDescription -> Type
-  constantDescriptionType (DefinedConstant _ t _) = t
-  constantDescriptionType (PrimitiveConstant _ t) = t
+  constantDescriptionType (DefinedConstant _ t _)                = t
+  constantDescriptionType (PrimitiveConstant _ t)                = t
+  constantDescriptionType (TypeRepresentationConstant _ _ _ t _) = t
+  constantDescriptionType (TypeAbstractionConstant _ _ _ t _)    = t
 
   -- |Returns the definition of a defined ConstantDescription.  Fails
   --  if the ConstantDescription is primitive.
-  constantDescriptionDefinition :: ConstantDescription -> Maybe Definition
+  constantDescriptionDefinition :: ConstantDescription -> Maybe Term
   constantDescriptionDefinition (DefinedConstant _ _ d) = return d
-  constantDescriptionDefinition PrimitiveConstant{}     = Nothing
+  constantDescriptionDefinition _                       = Nothing
 
   --
   -- * Some useful predefined constant descriptions.
@@ -404,7 +417,7 @@ where
   -- |Qualified name of the (primitive) equality constant baked into
   --  Mosquito's higher-order logic.
   equalityQualifiedName :: QualifiedName
-  equalityQualifiedName = mkQualifiedName ["Mosquito"] "_=_"
+  equalityQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "_=_"
 
   -- |Polymorphic type of the equality constant.
   equalityType :: Type
@@ -1035,24 +1048,42 @@ where
       , unwords ["term: `", pretty t, "'."]
       ]
 
-  primitiveNewDefinedType :: QualifiedName -> Theorem -> Inference (Theorem, Theorem)
-  primitiveNewDefinedType name definingTheorem
-    | hypotheses definingTheorem == [] = do
-        kernelMark ["primitiveNewDefinedType:", pretty name, pretty definingTheorem]
-        (predicate, argument) <- fromApp . conclusion $ definingTheorem
-        let fvP = fv predicate
-        if fvP == S.empty then
-          undefined
-        else
-          fail . unwords $ [
-            unwords ["primitiveNewDefinedType: defining predicate `", pretty predicate, "' is"]
-          , "not closed."
-          ]
-    | otherwise =
+  primitiveNewDefinedType :: QualifiedName -> Theorem -> Inference (Theorem, Theorem, Term, Term, TypeOperatorDescription)
+  primitiveNewDefinedType name theorem = do
+    (p, variable)       <- fromApp . conclusion $ theorem
+    (variable, repType) <- fromVar variable
+    if hypotheses theorem == [] then
+      if fv p == S.empty then do
+        let absName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Abstraction"
+        let repName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Representation"
+        let tyVars   =  S.toAscList . typeVars $ p
+        let arity    =  length tyVars
+        let dt       =  DefinedTypeOperator name arity theorem
+        absType      <- mkTyOperator dt $ map mkTyVar tyVars
+        let absV     =  mkVar "a" absType
+        let repV     =  mkVar "r" repType
+        let absDescr =  TypeAbstractionConstant    absName name arity (mkFunctionType repType absType) theorem
+        let repDescr =  TypeRepresentationConstant repName name arity (mkFunctionType absType repType) theorem
+        let absC     =  mkConst absDescr
+        let repC     =  mkConst repDescr
+        repA         <- mkApp repC absV
+        absRepA      <- mkApp absC repA
+        araa         <- mkEquality absRepA absV
+        pr           <- mkApp p repV
+        absR         <- mkApp absC repV
+        repAbsR      <- mkApp repC absR
+        rarr         <- mkEquality repAbsR repV
+        prrarr       <- mkEquality pr rarr
+        return (Theorem DerivedSafely ([], araa), Theorem DerivedSafely ([], prrarr), absC, repC, dt)
+      else
         fail . unwords $ [
-          unwords ["primitiveNewDefinedType: defining theorem for type `", pretty name, "' has"]
-        , unwords ["assumptions, namely: ", unwords . map pretty . hypotheses $ definingTheorem]
+          unwords ["primitiveNewDefinedType: defining predicate `", pretty p, "' in defining theorem"]
+        , "has free variables, and is not closed."
         ]
+    else
+      fail . unwords $ [
+        "primitiveNewDefinedType: defining theorem for a new type must have no assumptions."
+      ]
 
   primitiveNewAxiom :: Term -> Inference Theorem
   primitiveNewAxiom term = do
