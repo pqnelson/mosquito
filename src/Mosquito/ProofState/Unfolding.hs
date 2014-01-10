@@ -20,7 +20,7 @@ module Mosquito.ProofState.Unfolding (
   --  extraneous subgoals, changing the goal to prove into the original goal
   --  with the constant unfolded.
   unfoldTactic :: TheoremTactic
-  unfoldTactic theorem = apply localPreTactic >=> pointwiseTactic >=> autoSolveTactic theorem
+  unfoldTactic theorem = apply localPreTactic
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =

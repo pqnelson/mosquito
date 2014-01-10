@@ -54,6 +54,8 @@ library
                        Mosquito.Theories.Theory
                        Mosquito.Theories.Boolean
                        Mosquito.Theories.Function
+                       Mosquito.Theories.Pair
+                       Mosquito.Theories.Set
                        Mosquito.Theories.Utility
                        Mosquito.ProofState.Automation
                        Mosquito.ProofState.PreTactics
