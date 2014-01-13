@@ -1,5 +1,7 @@
-\documentclass{llncs}
-
+\let\accentvec\vec
+  \documentclass{llncs}
+    \let\spvec\vec
+    \let\vec\accentvec
 \usepackage{amsfonts}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -69,30 +71,47 @@
 \maketitle
 
 \begin{abstract}
-We present \mosquito, a stateless, pure, largely total LCF-style implementation of classical higher-order logic with choice in Haskell.
-We discuss details of the logic implemented, the kernel design and proof state and tactic representations.
-We present some simple tactic-guided backwards proofs of conjectures over the Booleans in the system.
+We present \mosquito, a stateless, pure, largely total LCF-style implementation of higher-order logic, using Haskell as a metalanguage.
+We discuss details of the logic implemented, kernel design and novel proof state and tactic representations.
 \end{abstract}
 
-\mosquito is an LCF-style implementation of higher-order logic (HOL) written in Haskell.
-\mosquito's kernel consists of 1000 lines of commented Haskell.
-Some infrastructure such as proof state representations and tactics are built atop this.
-More is in development.
-\paragraph{Writing a HOL in Haskell}
+\section{Introduction}
+\mosquito is an LCF-style implementation of higher-order logic (HOL) using Haskell as its metalanguage.
+The system is under active development.
+Some simple proofs, both forward and backward, have been carried out in the system: Boolean, pair and set theories are under construction, for instance.
+\mosquito may be obtained anonymously from a public Mercurial respository.\footnote{\url{https://bitbucket.org/MosquitoProofAssistant/mosquito}}
+
 Existing LCF-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009} and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
-When extending the logic with new constant definitions, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\mathtt{0 = 1}$ by transitivity and symmetry of equality.
+When extending the logic with definition of a new constant, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\vdash \mathtt{0 = 1}$ by transitivity and symmetry of equality.
 This, in the systems mentioned above, is managed by a stateful kernel wherein a mutable database of existing constant names is maintained.
-The redefinition of existing constants is therefore avoided.
+The redefinition of existing constants is therefore prevented by querying this database prior to admitting a new constant definition.
 
 Prevailing Haskell programming style tends to avoid the use of imperative update and maintenance of implicit state, whenever possible.
 Rather, explicit state tends to be passed around, with a monadic style of programming adopted to assuage the pain of explicit state passing.
 However, a na\"ive translation of an existing LCF-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system.
-A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
+%A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
 
-As Wiedijk noted, there is a simpler method for writing a stateless HOL kernel, which we adopt in \mosquito.
+As Wiedijk noted, there is a simple method for writing a stateless HOL kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using state, which we adopt in \mosquito.
 Constants can be represented as a compound type consisting of their name as well as their definition, rather than simply their name as in e.g. HOL Light.
 A constant $\mathtt{C}$ is now only equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition.
-Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ now no longer entails that a deduction of $\mathtt{0 = 1}$ is possible, and consistency is therefore retained without appeal to explicit state passing.
+Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ is now `safe', as a deduction of $\vdash \mathtt{0 = 1}$ is no longer possible.
+Consistency is therefore retained.
+
+\paragraph{Why develop another proof assistant?}
+\mosquito was originally conceived as a prototype of a kernel suitable for machine formalisation.
+By controlling state and adopting a monadic programming style, disavowing the use of exceptions to signal failure, and maintaining totality as far as possible, it was hoped the resulting system would be easier to formalise in a proof assistant directly than systems such as HOL4 and HOL Light.
+To a certain extent, that initial prototype got out of hand, and we started developing machinery atop the kernel, such as tactics and proof state representations, as well as conducting proofs of simple conjectures in the system---using Haskell as a metalanguage
+However, the influence of this original idea persists, and \mosquito is purposefully written in a style which we think is amenable to a machine-assisted proof of correctness.
+
+\paragraph{Why choose HOL?}
+HOL is a well understood and a widely implemented logic.
+It is relatively simple, with the core logic being described fully in a handful of inference rules, yet nevertheless has a proven track record in being able to capture a wide swathe of mathematics and computer science.
+Further, by implementing HOL, one may leverage existing expertise and tools---for example, importing and exporting proofs to-and-from other implementations of HOL via OpenTheory~\cite{hurd:opentheory:2011}, or even making use of automated proof tools already implemented and tested in e.g. Isabelle/HOL to close proof obligations in \mosquito~\cite{kumar:standalone:2012}.
+
+\paragraph{Related work}
+Multiple implementations of HOLs and `HOL like' systems exist, though two existing systems are particularly closely related.
+Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modified implementation of HOL Light with a stateless kernel.
+Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation of HOL extended with System-F style polymorphism implemented in Haskell.
 
 \begin{figure}
 \begin{gather*}
@@ -100,105 +119,126 @@ Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ now no
 (t \aeq u)
 \justifies
 \{\} \vdash t = u
+\using\rulefont{alpha}
 \end{prooftree}
 \quad
 \begin{prooftree}
 \Gamma \vdash t = u
 \justifies
 \Gamma \vdash u = t
+\using\rulefont{symm}
 \end{prooftree}
 \quad
 \begin{prooftree}
 \Gamma \vdash t = u \quad \Delta \vdash u = v
 \justifies
 \Gamma \cup \Delta \vdash t = v
+\using\rulefont{trans}
 \end{prooftree}
-\quad
+\\[1.5ex]
 \begin{prooftree}
 (t : \mathtt{Bool})
 \justifies
 \{ t \} \vdash t
+\using\rulefont{assm}
 \end{prooftree}
 \quad
 \begin{prooftree}
 \Gamma \vdash t \quad \Delta \vdash u
 \justifies
 (\Gamma - u) \cup (\Delta - t) \vdash t = u
+\using\rulefont{asym}
+\end{prooftree}
+\quad
+\begin{prooftree}
+\Gamma \ent t = u \quad \Delta \ent u
+\justifies
+\Gamma \cup \Delta \ent t
+\using\rulefont{eqmp}
 \end{prooftree}
 \\[1.5ex]
 \begin{prooftree}
 \Gamma \vdash t = u
 \justifies
 \Gamma \vdash \lam{a{:}\phi}t = \lam{a{:}\phi}u
+\using\rulefont{abs}
 \end{prooftree}
 \quad
 \begin{prooftree}
 \Gamma \vdash t = u \quad \Delta \vdash v = w
 \justifies
 \Gamma \cup \Delta \vdash t \cdot v = u \cdot w
+\using\rulefont{comb}
 \end{prooftree}
-\quad
+\\[1.5ex]
 \begin{prooftree}
 \phantom{h}
 \justifies
-\{\} \vdash \lam{a{:}\phi}t \cdot u = t[a := u]
+\{\} \vdash \lam{a{:}\phi}t \cdot u = t[a/u]
+\using\rulefont{beta}
 \end{prooftree}
-\\[1.5ex]
+\quad
 \begin{prooftree}
 (a \not\in fv(t))
 \justifies
 \{\} \vdash \lam{a{:}\phi}(t \cdot a) = t
+\using\rulefont{eta}
+\end{prooftree}
+\\[1.5ex]
+\begin{prooftree}
+\Gamma \vdash t
+\justifies
+\Gamma[\vec{b}/\vec{u}] \vdash t[\vec{b}/\vec{u}]
+\using\rulefont{inst}
 \end{prooftree}
 \quad
 \begin{prooftree}
 \Gamma \vdash t
 \justifies
-\Gamma[b := u] \vdash t[b := u]
-\end{prooftree}
-\quad
-\begin{prooftree}
-\Gamma \vdash t
-\justifies
-\Gamma[\alpha := \phi] \vdash t[\alpha := \phi]
+\Gamma[\vec{\alpha}/\vec{\phi}] \vdash t[\vec{\alpha}/\vec{\phi}]
+\using\rulefont{tyinst}
 \end{prooftree}
 \end{gather*}
 \caption{Inference rules for \mosquito's logic}
 \label{fig.rules}
 \end{figure}
 
-\paragraph{\mosquito's logic}
-The basic axioms and rules of \mosquito's logic are described in Figure~\ref{fig.rules}.
+\section{\mosquito's logic}
+\mosquito implements a similar higher-order logic to the HOL Light system.
+Terms $t$, $u$, and so on, are terms of the simply-typed $\lambda$-calculus extended with constants.
+The full derivation rules for the core logic are presented in Figure~\ref{fig.rules}.
+Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ corresponds to the usual set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution replacing type variables in a term, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is the pointwise parallel type variable substitution operating on a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$ of term variables).
 
-\paragraph{Why develop another HOL?}
-\mosquito was originally conceived as a kernel suitable for machine formalisation.
-To a certain extent, that prototype got out of hand, and we started developing machinery atop the kernel, such as tactics, tacticals, and proof state representations, that surpassed our original intentions.
-Writing proof assistants is fun.
+To maintain consistency, \mosquito follows the LCF design philosophy.
+The kernel exposes several abstract types: $\mathtt{Term}$, $\mathtt{Type}$ and $\mathtt{Theorem}$.
+Modulo bugs in the design of the Haskell language, or within implementation of GHC, the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
 
-The influence of this original idea persists, however, and \mosquito is purposefully written in a style which we think is amenable to machine-assisted proof of correctness.
-The \mosquito kernel itself is stateless, as we have noted.
-Exceptions, pervasive in other HOLs for handling errors, are completely avoided in favour of a monadic programming style.
-We do not use mutable data structures.
-Haskell's strict regimen of noting effects in types prevents us from arbitrarily mixing effectful and pure code.
-Partiality is also kept to an absolute minimum, and to the best of our knowledge is present in only one place within the \mosquito code base.
-Even here, if we chose to adopt more advanced Haskell type-level extensions, we could eliminate this partiality.
+In particular, the kernel exports two primitive \emph{type formers}: $\mathtt{Bool}$, the Booleans, and $- \Rightarrow -$, the function space arrow.
+Each type former is equipped with an \emph{arity}, a natural number detailing the number of other types one must supply to the former to construct a new type---0 in the case of \texttt{Bool} and 2 in the case of $- \Rightarrow -$.
+Call a fully-applied type former a \emph{type} (so $\mathtt{Bool}$ is both a type former and a type).
+A `term builder' \textsc{api} is exposed in the kernel which ensures one may only construct `arity correct' types.
 
-We chose to implement `vanilla HOL' rather than a more expressive logic.
-In these matters, we believe a certain conservatism is to be preferred, as HOL is well understood, widely implemented, relatively simple but expressive enough to capture a large amount of mathematics and computer science.
-\paragraph{Related work}
-\begin{figure}
-    \begin{tabular}{c||p{2.5cm}|c|c}
-    ~            & Stateful Kernel                        & Stateless Kernel (ML) & Stateless Kernel (Haskell) \\ \hline\hline
-    Vanilla HOL  & HOL Light, HOL 4, ProofPower, HOL Zero & Stateless HOL         & Mosquito                   \\ \hline
-    Extended HOL & Isabelle, HOL2P, HOL$_\omega$          & ~                     & HaskHOL                    \\
-    \end{tabular}
-\caption{Related work}
-\label{fig.related.work}
-\end{figure}
-Multiple implementations of HOLs and `HOL like' systems exist.
-We survey related work in Figure~\ref{fig.related.work}.
-Two existing systems are particularly closely related.
-Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modified implementation of HOL Light with a stateless kernel.
-Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation of HOL extended with System-F style polymorphism implemented in Haskell.
+Similarly, the kernel exports a single primitive constant, $- = -$, the equality constant, of type $\alpha \Rightarrow \alpha \Rightarrow \mathtt{Bool}$.
+Equalities, $t = u$ in Figure~\ref{fig.rules}, are therefore implemented merely as applications $(= t) u$ with some syntactic sugar sprinkled on top for ease of digestion.
+Terms within the kernel are fully type annotated and only type-correct terms may be constructed.
+The rules above should therefore be read as including a series of hidden typing constraints.
+Under this scheme, the side condition stating $t$ must be a \emph{formula}---a term of type $\mathtt{Bool}$---in rule \rulefont{assm} makes sense, and the construction of a term $t = u$ necessarily implies that the terms $t$ and $u$ possess the same type.
+
+The \mosquito kernel implements slightly stronger inference rules than the HOL Light kernel.
+Rule \rulefont{alpha} bakes $\alpha$-equivalence into \mosquito's reflexivity rule.
+In HOL Light a weakened form of \rulefont{eta} is axiomatised outwith the kernel, with the full rule being derived later.
+We choose instead to implement the full $\eta$-equivalence rule within the kernel itself.
+Similarly, HOL Light's corresponding \rulefont{beta} rule is a weakened form of the full $\beta$-equivalence rule that we implement in \mosquito, with the full rule derived later.
+Again, we choose to implement the full rule directly in \mosquito's kernel.
+
+\mosquito's core higher-order logic may be extended in three ways.
+A new constant may be defined as equal to an existing term.
+Various standard side-conditions on this definitional mechanism maintain consistency of the logic.
+A new type may be defined.
+This requires the user submit proof that the new type is in bijection with a subset of an existing type, and that the new type is inhabited.
+Again, these side-conditions are standard amongst HOL implementations, modulo minor differences.
+Lastly, a formula may be asserted freeform as an axiom.
+As axioms are dangerous from a consistency point of view, \mosquito, indelibly `marks' any theorem obtained either directly as an admitted axiom, or indirectly from a derivation that mentions an axiom.
 
 \section{Tactics and the proof state}
 \label{sect.tactics.proof.state}
