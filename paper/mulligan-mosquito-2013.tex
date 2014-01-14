@@ -83,35 +83,36 @@ Some simple proofs, both forward and backward, have been carried out in the syst
 
 Existing LCF-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009} and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
 When extending the logic with definition of a new constant, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\vdash \mathtt{0 = 1}$ by transitivity and symmetry of equality.
-This, in the systems mentioned above, is managed by a stateful kernel wherein a mutable database of existing constant names is maintained.
-The redefinition of existing constants is therefore prevented by querying this database prior to admitting a new constant definition.
+This, in the systems mentioned above, is managed by a stateful kernel wherein a mutable database of existing constant names is maintained and queried prior to admitting a new constant definition.
 
 Prevailing Haskell programming style tends to avoid the use of imperative update and maintenance of implicit state, whenever possible.
 Rather, explicit state tends to be passed around, with a monadic style of programming adopted to assuage the pain of explicit state passing.
-However, a na\"ive translation of an existing LCF-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system.
+However, a na\"ive translation of an existing LCF-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system, as well as exposing a cumbersome \textsc{api} to the programmer.
 %A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
 
-As Wiedijk noted, there is a simple method for writing a stateless HOL kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using state, which we adopt in \mosquito.
+As Wiedijk noted, there is a simple method for writing a stateless HOL kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using state, whilst retaining the elegance of the original stateful design, which we adopt in \mosquito.
 Constants can be represented as a compound type consisting of their name as well as their definition, rather than simply their name as in e.g. HOL Light.
 A constant $\mathtt{C}$ is now only equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition.
 Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ is now `safe', as a deduction of $\vdash \mathtt{0 = 1}$ is no longer possible.
-Consistency is therefore retained.
+A similar scheme is used to tag type formers and the \emph{abstraction} and \emph{representation} constants for new types---bearing witness to a require bijection with a subset of an existing type---with their defining theorems.
+Consistency is retained.
 
-\paragraph{Why develop another proof assistant?}
-\mosquito was originally conceived as a prototype of a kernel suitable for machine formalisation.
-By controlling state and adopting a monadic programming style, disavowing the use of exceptions to signal failure, and maintaining totality as far as possible, it was hoped the resulting system would be easier to formalise in a proof assistant directly than systems such as HOL4 and HOL Light.
-To a certain extent, that initial prototype got out of hand, and we started developing machinery atop the kernel, such as tactics and proof state representations, as well as conducting proofs of simple conjectures in the system---using Haskell as a metalanguage
-However, the influence of this original idea persists, and \mosquito is purposefully written in a style which we think is amenable to a machine-assisted proof of correctness.
+\paragraph{Why develop another proof assistant?  Why choose HOL?}
+\mosquito was conceived as a kernel prototype suitable for machine formalisation.
+By controlling state and adopting a monadic programming style, disavowing the use of exceptions to signal failure, and maintaining totality as far as possible, it is hoped the resulting system is easier to formalise in a proof assistant than systems such as HOL4 and HOL Light.
+To an extent, that initial prototype got out of hand, and we started developing machinery atop the kernel, such as tactics and proof state representations, as well as conducting proofs of simple conjectures in the system.
+The influence of this original idea persists, and \mosquito is purposefully written in a style which we think is amenable to a machine-checked proof of correctness.
 
-\paragraph{Why choose HOL?}
 HOL is a well understood and a widely implemented logic.
 It is relatively simple, with the core logic being described fully in a handful of inference rules, yet nevertheless has a proven track record in being able to capture a wide swathe of mathematics and computer science.
 Further, by implementing HOL, one may leverage existing expertise and tools---for example, importing and exporting proofs to-and-from other implementations of HOL via OpenTheory~\cite{hurd:opentheory:2011}, or even making use of automated proof tools already implemented and tested in e.g. Isabelle/HOL to close proof obligations in \mosquito~\cite{kumar:standalone:2012}.
 
+Mosquito fills a niche: it's an implementation of vanilla HOL---potentially maintaining interoptability with existing HOLs via OpenTheory---using Haskell, not an ML dialect, as its metalanguage.
+
 \paragraph{Related work}
-Multiple implementations of HOLs and `HOL like' systems exist, though two existing systems are particularly closely related.
-Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modified implementation of HOL Light with a stateless kernel.
-Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation of HOL extended with System-F style polymorphism implemented in Haskell.
+Multiple implementations of HOLs and similar systems exist, though two existing systems are particularly closely related.
+Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modification of HOL Light with a stateless kernel.
+Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation of HOL extended with System-F style polymorphism also using Haskell as a metalanguage.
 
 \begin{figure}
 \begin{gather*}
@@ -209,62 +210,81 @@ Terms $t$, $u$, and so on, are terms of the simply-typed $\lambda$-calculus exte
 The full derivation rules for the core logic are presented in Figure~\ref{fig.rules}.
 Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ corresponds to the usual set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution replacing type variables in a term, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is the pointwise parallel type variable substitution operating on a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$ of term variables).
 
-To maintain consistency, \mosquito follows the LCF design philosophy.
+To enforce consistency, \mosquito follows the LCF design philosophy.
 The kernel exposes several abstract types: $\mathtt{Term}$, $\mathtt{Type}$ and $\mathtt{Theorem}$.
 Modulo bugs in the design of the Haskell language, or within implementation of GHC, the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
 
-In particular, the kernel exports two primitive \emph{type formers}: $\mathtt{Bool}$, the Booleans, and $- \Rightarrow -$, the function space arrow.
-Each type former is equipped with an \emph{arity}, a natural number detailing the number of other types one must supply to the former to construct a new type---0 in the case of \texttt{Bool} and 2 in the case of $- \Rightarrow -$.
-Call a fully-applied type former a \emph{type} (so $\mathtt{Bool}$ is both a type former and a type).
+The kernel exports two primitive \emph{type formers}: $\mathtt{Bool}$, the Booleans, and $- \Rightarrow -$, the function space arrow.
+Each type former is equipped with an \emph{arity}, a natural number detailing the number of other types one must supply to the former to construct a new type.
+Call a fully-applied type former a \emph{type}.
+The primitive type \texttt{Bool} has arity 0, whilst the primitive type former $- \Rightarrow -$ has arity 2.
 A `term builder' \textsc{api} is exposed in the kernel which ensures one may only construct `arity correct' types.
 
 Similarly, the kernel exports a single primitive constant, $- = -$, the equality constant, of type $\alpha \Rightarrow \alpha \Rightarrow \mathtt{Bool}$.
-Equalities, $t = u$ in Figure~\ref{fig.rules}, are therefore implemented merely as applications $(= t) u$ with some syntactic sugar sprinkled on top for ease of digestion.
+Equalities, $t = u$ in Figure~\ref{fig.rules}, are therefore implemented merely as applications $(= t) u$ with syntactic sugar sprinkled atop.
 Terms within the kernel are fully type annotated and only type-correct terms may be constructed.
-The rules above should therefore be read as including a series of hidden typing constraints.
+Figure~\ref{fig.rules} should therefore be interpreted as including a series of hidden typing constraints.
 Under this scheme, the side condition stating $t$ must be a \emph{formula}---a term of type $\mathtt{Bool}$---in rule \rulefont{assm} makes sense, and the construction of a term $t = u$ necessarily implies that the terms $t$ and $u$ possess the same type.
 
 The \mosquito kernel implements slightly stronger inference rules than the HOL Light kernel.
-Rule \rulefont{alpha} bakes $\alpha$-equivalence into \mosquito's reflexivity rule.
-In HOL Light a weakened form of \rulefont{eta} is axiomatised outwith the kernel, with the full rule being derived later.
-We choose instead to implement the full $\eta$-equivalence rule within the kernel itself.
-Similarly, HOL Light's corresponding \rulefont{beta} rule is a weakened form of the full $\beta$-equivalence rule that we implement in \mosquito, with the full rule derived later.
-Again, we choose to implement the full rule directly in \mosquito's kernel.
+Rule \rulefont{alpha} bakes $\alpha$-equivalence, implemented using `nominal'-style swappings, into \mosquito's reflexivity rule.
+In HOL Light a weakened form of \rulefont{eta} is axiomatised outwith the kernel.
+Similarly, a weakened form of \rulefont{beta} is implemented in the HOL Light kernel.
+The strengthened versions of $\eta$- and $\beta$-equality are then supplied later, as derived rules.
+We choose to implement the full versions of these rules directly in \mosquito's kernel.
 
 \mosquito's core higher-order logic may be extended in three ways.
-A new constant may be defined as equal to an existing term.
-Various standard side-conditions on this definitional mechanism maintain consistency of the logic.
-A new type may be defined.
-This requires the user submit proof that the new type is in bijection with a subset of an existing type, and that the new type is inhabited.
-Again, these side-conditions are standard amongst HOL implementations, modulo minor differences.
+A new constant may be defined as equal to an existing term, modulo restrictions on the free (type-)variables of that term.
+A new inhabited type may be defined in provable bijection with a subset of an existing type.
 Lastly, a formula may be asserted freeform as an axiom.
-As axioms are dangerous from a consistency point of view, \mosquito, indelibly `marks' any theorem obtained either directly as an admitted axiom, or indirectly from a derivation that mentions an axiom.
+As axioms are `dangerous' from a consistency point of view, \mosquito, indelibly marks any theorem obtained directly or indirectly from an axiom.
 
 \section{Tactics and the proof state}
 \label{sect.tactics.proof.state}
 
-Mosquito supports forwards-directed proof directly via application of the primitive HOL rules and axioms implemented in the Mosquito kernel.
-Backwards-directed proof, more amenable for proving complex conjectures, is supported through the use of \emph{tactics} operating on a \emph{proof state}.
+\mosquito supports forward proof by direct appeal to the kernel implementation of the primitive HOL rules and axioms in Figure~\ref{fig.rules}.
+However, for some complex conjectures, backward proof---gradually decomposing a conjecture into simpler subgoals---is more amenable.
+\mosquito supports backward proof (as well as mixing forward and backward proof) via \emph{tactics} operating on a \emph{proof state}.
 
-A Mosquito proof state is a wrapper around an \emph{incomplete derivation}, an element of the Haskell type:
+A \mosquito proof state consists of an explicit incomplete derivation tree---a rose tree with an additional constructor $\mathtt{Hole}$ corresponding to a proof obligation or `something to prove'---and some metadata.
+Each $\mathtt{Hole}$ has a local list of assumptions, as well as the goal to prove at that hole.
+Holes may be selected or unselected.
+Each branch in the incomplete derivation tree is annotated with a \emph{justification} a function used to collapse a complete derivation tree, replaying the proof in a forward direction once completed, into a $\mathtt{Theorem}$.
+The \mosquito proof state \textsc{api} exposes three key functions, where $\mathtt{Inference}$ is a (monadic) type constructor used to signal failure:
 \begin{lstlisting}
-data IncompleteDerivation
-  = Hole Selection [Theorem] Term
-  | Branch Justification [IncompleteDerivation]
+mkConjecture :: Term $\rightarrow$ Inference ProofState
+qed :: ProofState $\rightarrow$ Inference Theorem
+act :: ProofState $\rightarrow$ Tactic $\rightarrow$ Inference ProofState
 \end{lstlisting}
-An incomplete derivation is a derivation tree with holes.
-Intuitively, holes (as represented by the Haskell constructor $\mathtt{Hole}$) correspond to parts of a derivation tree yet to be filled in, or rather, goals left to prove in pursuit of a complete proof of a conjecture.
-Holes are annotated with a list of assumptions local to that goal as well as the goal term itself.
 
-Branches (as represented by the Haskell constructor $\mathtt{Branch}$) within a derivation tree are annotated with a \emph{justification}, a function of type $\mathtt{[Theorem]} \rightarrow \mathtt{Theorem}$.
-A justification function is used to collapse a complete derivation tree into an element of type $\mathtt{Theorem}$ at the end of the proof---a forward replay of a backward proof.
-Branches are equipped with a list of subtrees.
-Intuitively, branches correspond to the backwards application of a proof rule or theorem.
-Under this scheme, a branch with an empty list of subtrees denotes a closed goal---the application of an axiom, or the closure of a goal with a previously proved theorem, say.
+A new proof state is constructed using $\mathtt{mkConjecture}$.
+This takes as input a term and creates an incomplete derivation tree consisting of a selected hole with empty assumptions and the term as the goal to prove.
+The function fails if the input term is not a formula.
+A proof state is transformed into a $\mathtt{Theorem}$ using $\mathtt{qed}$, failing if the justification functions annotating the enclosed derivation tree do not correctly replay the proof in a forward direction via the kernel, produces a $\mathtt{Theorem}$ that fails to match the original conjecture prompting the creation of the tree, or if the derivation tree is still incomplete.
 
-Mosquito goals may be \emph{selected} or \emph{unselected}.
-Multiple goals may be selected concurrently, or none at all.
-Backwards proof in Mosquito is progressed by attempting to apply a tactic to every selected goal in an incomplete derivation concurrently.
+Proof states are transformed using the $\mathtt{act}$ function, which applies a tactic to a proof state, obtaining a new proof state.
+Intuitively, tactics are applied to \emph{every} selected goal at once---where zero or many goals may be selected at one time.
+For any given goal being transformed by a tactic, the tactic may fail to apply at that goal, in which case $\mathtt{act}$ fails, or the tactic may return a list of new goals to prove.
+In this latter case the old goal is transformed into a branch in the derivation tree with holes corresponding to the new goals as children, annotated by a justification function supplied by the tactic.
+This style of proof, where tactics apply concurrently to every selected goal rather than to the top of the goal stack, is similar to a style employed in the Matita proof assistant~\cite{asperti:matita:2011} and facilitates the sharing of chunks of tactic driven proof across multiple similar goals.
+
+In other HOLs tactics are pieced together via tactic-valued functionals called tacticals.
+Inspecting a typical tactic-driven proof in e.g. HOL Light, we may interpret the name of common tacticals as `keywords' to obtain an imaginary domain specific language for constructing proofs.
+\mosquito embeds the abstract syntax tree of that language explicitly as an algebraic data type:
+\begin{lstlisting}
+data Tactic where
+  Apply    :: PreTactic $\rightarrow$ Tactic
+  (>=>)    :: Tactic    $\rightarrow$ Tactic $\rightarrow$ Tactic
+  Id       :: Tactic
+  FailWith :: String $\rightarrow$ Tactic
+  Try      :: Tactic $\rightarrow$ Tactic
+  (<|>)    :: Tactic $\rightarrow$ Tactic $\rightarrow$ Tactic
+  Repeat   :: Tactic $\rightarrow$ Tactic
+\end{lstlisting}
+
+The semantics of how a $\mathtt{Tactic}$ acts on the proof state is given by the $\mathtt{act}$ function above.
+The tactics $\mathtt{Id}$ and $\mathtt{FailWith\ err}$ always succeed and leave the proof state unchanged, and always fail producing the given error message, respectively.
+The tactic $\mathtt{Try\ t}$ attempts to modify the proof state with $\mathtt{t}$, returning the original proof state if that fails, or the modified state if the operation succeeds.
 
 \section{Conclusions and future work}
 \label{sect.conclusions}
