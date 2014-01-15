@@ -73,7 +73,6 @@ module Mosquito.ProofState.Tactics (
   optimise (Choice     (FailWith err)   tactic)         = optimise tactic
   optimise (Choice     tactic           (FailWith err)) = optimise tactic
   optimise (Choice     Id               tactic)         = optimise tactic
-  optimise (Repeat     Id)                              = Id
   optimise (Repeat     (FailWith err))                  = Id
   optimise (Repeat     (Repeat tactic))                 = optimise . Repeat . optimise $ tactic
   optimise (Try        (Try tactic))                    = optimise . Try . optimise $ tactic

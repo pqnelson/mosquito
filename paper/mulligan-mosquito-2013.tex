@@ -17,7 +17,7 @@
 
 \author{Dominic P. Mulligan}
 \title{Mosquito: an implementation of higher-order logic}
-\subtitle{(Rough diamond)}
+%\subtitle{(Rough diamond)}
 \titlerunning{Mosquito}
 \institute{Computer Laboratory, University of Cambridge}
 
@@ -52,7 +52,7 @@
   language=haskell,                 % the language of the code
   mathescape=true,
   %morekeywords={*,...},            % if you want to add more keywords to the set
-  numbers=left,                    % where to put the line-numbers; possible values are (none, left, right)
+  numbers=none,                    % where to put the line-numbers; possible values are (none, left, right)
   %numbersep=5pt,                   % how far the line-numbers are from the code
   numberstyle=\tiny\color{mygray}, % the style that is used for the line-numbers
   rulecolor=\color{black},         % if not set, the frame-color may be changed on line-breaks within not-black text (e.g. comments (green here))
@@ -171,21 +171,21 @@ Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is an implementation
 \Gamma \cup \Delta \vdash t \cdot v = u \cdot w
 \using\rulefont{comb}
 \end{prooftree}
-\\[1.5ex]
+\quad
 \begin{prooftree}
 \phantom{h}
 \justifies
 \{\} \vdash \lam{a{:}\phi}t \cdot u = t[a/u]
 \using\rulefont{beta}
 \end{prooftree}
-\quad
+\\[1.5ex]
 \begin{prooftree}
 (a \not\in fv(t))
 \justifies
 \{\} \vdash \lam{a{:}\phi}(t \cdot a) = t
 \using\rulefont{eta}
 \end{prooftree}
-\\[1.5ex]
+\quad
 \begin{prooftree}
 \Gamma \vdash t
 \justifies
@@ -210,20 +210,20 @@ Terms $t$, $u$, and so on, are terms of the simply-typed $\lambda$-calculus exte
 The full derivation rules for the core logic are presented in Figure~\ref{fig.rules}.
 Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ corresponds to the usual set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution replacing type variables in a term, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is the pointwise parallel type variable substitution operating on a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$ of term variables).
 
-To enforce consistency, \mosquito follows the LCF design philosophy.
+\mosquito follows the well-worn LCF design philosophy.
 The kernel exposes several abstract types: $\mathtt{Term}$, $\mathtt{Type}$ and $\mathtt{Theorem}$.
 Modulo bugs in the design of the Haskell language, or within implementation of GHC, the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
 
 The kernel exports two primitive \emph{type formers}: $\mathtt{Bool}$, the Booleans, and $- \Rightarrow -$, the function space arrow.
-Each type former is equipped with an \emph{arity}, a natural number detailing the number of other types one must supply to the former to construct a new type.
+Each type former is equipped with an \emph{arity}, a natural number detailing the number of types one must supply to the former to construct a new type.
 Call a fully-applied type former a \emph{type}.
 The primitive type \texttt{Bool} has arity 0, whilst the primitive type former $- \Rightarrow -$ has arity 2.
-A `term builder' \textsc{api} is exposed in the kernel which ensures one may only construct `arity correct' types.
+The \textsc{api} exposed in the kernel ensures one may only construct `arity correct' types.
 
 Similarly, the kernel exports a single primitive constant, $- = -$, the equality constant, of type $\alpha \Rightarrow \alpha \Rightarrow \mathtt{Bool}$.
 Equalities, $t = u$ in Figure~\ref{fig.rules}, are therefore implemented merely as applications $(= t) u$ with syntactic sugar sprinkled atop.
 Terms within the kernel are fully type annotated and only type-correct terms may be constructed.
-Figure~\ref{fig.rules} should therefore be interpreted as including a series of hidden typing constraints.
+Figure~\ref{fig.rules} should be interpreted as including a series of hidden typing constraints.
 Under this scheme, the side condition stating $t$ must be a \emph{formula}---a term of type $\mathtt{Bool}$---in rule \rulefont{assm} makes sense, and the construction of a term $t = u$ necessarily implies that the terms $t$ and $u$ possess the same type.
 
 The \mosquito kernel implements slightly stronger inference rules than the HOL Light kernel.
@@ -243,12 +243,12 @@ As axioms are `dangerous' from a consistency point of view, \mosquito, indelibly
 \label{sect.tactics.proof.state}
 
 \mosquito supports forward proof by direct appeal to the kernel implementation of the primitive HOL rules and axioms in Figure~\ref{fig.rules}.
-However, for some complex conjectures, backward proof---gradually decomposing a conjecture into simpler subgoals---is more amenable.
-\mosquito supports backward proof (as well as mixing forward and backward proof) via \emph{tactics} operating on a \emph{proof state}.
+However, for more complex proofs, backward proof---gradually decomposing a goal into simpler subgoals---may be more amenable.
+\mosquito supports backward proof (as well as a mixture of the two) via \emph{tactics} operating on a \emph{proof state}.
 
-A \mosquito proof state consists of an explicit incomplete derivation tree---a rose tree with an additional constructor $\mathtt{Hole}$ corresponding to a proof obligation or `something to prove'---and some metadata.
-Each $\mathtt{Hole}$ has a local list of assumptions, as well as the goal to prove at that hole.
-Holes may be selected or unselected.
+A \mosquito proof state consists of an explicit incomplete derivation tree---a rose tree with an additional constructor $\mathtt{Hole}$ corresponding to a proof obligation, or `something to prove'---and some metadata.
+Each $\mathtt{Hole}$ has a local list of assumptions as well as the goal to prove at that hole.
+Holes are either selected or unselected.
 Each branch in the incomplete derivation tree is annotated with a \emph{justification} a function used to collapse a complete derivation tree, replaying the proof in a forward direction once completed, into a $\mathtt{Theorem}$.
 The \mosquito proof state \textsc{api} exposes three key functions, where $\mathtt{Inference}$ is a (monadic) type constructor used to signal failure:
 \begin{lstlisting}
@@ -258,36 +258,77 @@ act :: ProofState $\rightarrow$ Tactic $\rightarrow$ Inference ProofState
 \end{lstlisting}
 
 A new proof state is constructed using $\mathtt{mkConjecture}$.
-This takes as input a term and creates an incomplete derivation tree consisting of a selected hole with empty assumptions and the term as the goal to prove.
-The function fails if the input term is not a formula.
+This takes as input a formula and creates an incomplete derivation tree consisting of a selected hole with no assumptions and the formula as the goal to prove, failing if the input term does not have $\mathtt{Bool}$ type.
 A proof state is transformed into a $\mathtt{Theorem}$ using $\mathtt{qed}$, failing if the justification functions annotating the enclosed derivation tree do not correctly replay the proof in a forward direction via the kernel, produces a $\mathtt{Theorem}$ that fails to match the original conjecture prompting the creation of the tree, or if the derivation tree is still incomplete.
 
 Proof states are transformed using the $\mathtt{act}$ function, which applies a tactic to a proof state, obtaining a new proof state.
-Intuitively, tactics are applied to \emph{every} selected goal at once---where zero or many goals may be selected at one time.
-For any given goal being transformed by a tactic, the tactic may fail to apply at that goal, in which case $\mathtt{act}$ fails, or the tactic may return a list of new goals to prove.
-In this latter case the old goal is transformed into a branch in the derivation tree with holes corresponding to the new goals as children, annotated by a justification function supplied by the tactic.
-This style of proof, where tactics apply concurrently to every selected goal rather than to the top of the goal stack, is similar to a style employed in the Matita proof assistant~\cite{asperti:matita:2011} and facilitates the sharing of chunks of tactic driven proof across multiple similar goals.
+Intuitively, tactics are applied to every selected goal at once.
+Zero or many goals may be selected at one time.
+A tactic must succeed at \emph{every} selected goal for $\mathtt{act}$ itself to succeed.
+Should a tactic succeed at a goal it is transformed into a branch in the derivation tree with selected holes corresponding to the new subgoals as children.
+The required justification function is supplied by the tactic.
+This style of tactic application is similar in spirit to a style employed in Matita~\cite{asperti:matita:2011} and facilitates the sharing of chunks of tactic driven proof across multiple similar goals.
 
 In other HOLs tactics are pieced together via tactic-valued functionals called tacticals.
-Inspecting a typical tactic-driven proof in e.g. HOL Light, we may interpret the name of common tacticals as `keywords' to obtain an imaginary domain specific language for constructing proofs.
-\mosquito embeds the abstract syntax tree of that language explicitly as an algebraic data type:
+In contrast, \mosquito embeds the abstract syntax tree of a \emph{proof description language} explicitly as an algebraic data type:
 \begin{lstlisting}
-data Tactic where
-  Apply    :: PreTactic $\rightarrow$ Tactic
-  (>=>)    :: Tactic    $\rightarrow$ Tactic $\rightarrow$ Tactic
-  Id       :: Tactic
-  FailWith :: String $\rightarrow$ Tactic
-  Try      :: Tactic $\rightarrow$ Tactic
-  (<|>)    :: Tactic $\rightarrow$ Tactic $\rightarrow$ Tactic
-  Repeat   :: Tactic $\rightarrow$ Tactic
+data Tactic
+  = Apply PreTactic | ($\rightarrowtail$) Tactic Tactic | Id | FailWith String
+  | Try Tactic | ($\oplus$) Tactic Tactic | Repeat Tactic
 \end{lstlisting}
 
-The semantics of how a $\mathtt{Tactic}$ acts on the proof state is given by the $\mathtt{act}$ function above.
-The tactics $\mathtt{Id}$ and $\mathtt{FailWith\ err}$ always succeed and leave the proof state unchanged, and always fail producing the given error message, respectively.
-The tactic $\mathtt{Try\ t}$ attempts to modify the proof state with $\mathtt{t}$, returning the original proof state if that fails, or the modified state if the operation succeeds.
+The semantics of proof descriptions is dictated by the $\mathtt{act}$ function above which uses a tactic to transform proof states.
 
-\section{Conclusions and future work}
+For every proof state $\mathtt{p}$, a call to $\mathtt{act\ p\ (FailWith\ err)}$ will result in failure, with $\mathtt{err}$ as a diagnostic error message, whilst a call to $\mathtt{act\ p\ Id}$ will always successfully return $\mathtt{p}$.
+A call to $\mathtt{act\ p\ (Try\ t)}$ first tries to apply $\mathtt{t}$, succeeding if this succeeds with the new proof state, or succeeding with the old proof state if this fails.
+Repetition of tactic application is handled with $\mathtt{Repeat\ t}$, which attempts to apply $\mathtt{t}$ at least once to a proof state.
+Sequencing and choice are handled via $(\rightarrowtail)$ and $(\oplus)$, respectively.
+The call $\mathtt{act\ p\ (t \rightarrowtail t')}$ will first try to transform $\mathtt{p}$ with $\mathtt{t}$.
+If that succeeds, then the resulting state will be transformed by $\mathtt{t'}$, otherwise the call results in failure.
+Similarly, $\mathtt{act\ p\ (t \oplus t')}$ attempts $\mathtt{t}$, returning success if that transformation succeeded, otherwise attempts $\mathtt{t'}$.
+
+$\mathtt{Apply}$ is perhaps the most interesting constructor of the $\mathtt{Tactic}$ data type, lifting a \emph{pretactic} into a tactic.
+Intuitively, a pretactic is a function that edits a selected hole in the derivation tree.
+A pretactic is supplied with the assumptions and goal to prove at that hole, and may either fail with an error at that hole, in which case it is not applicable, or succeed, returning a list of new subgoals which are spliced into the derivation tree as new holes coupled with a justification function which reverses the pretactic's work.
+Pretactics are entirely `local'---they are not supplied with a global view of the entire derivation tree under construction.
+For example, $\mathtt{alphaPreTactic}$ examines the goal at a given hole, decides whether the goal is an equality, tests whether both sides of the equality are $\alpha$-equivalent, and if so returns an empty list of new goals coupled with a justification function that makes use of the implementation of \rulefont{alpha} from Figure~\ref{fig.rules}.
+
+The $\mathtt{Tactic}$ embedding may be minimalist, but more complex tactics\footnote{We abuse language and refer to any $\mathtt{Tactic}$-valued Haskell function as a tactic.} may be written over this type.
+For instance, the tactic $\mathtt{repeatN}$ repeatedly applies a tactic $\mathtt{m}$ times to a given proof state:
+\begin{lstlisting}
+repeatN :: Int $\rightarrow$ Tactic $\rightarrow$ Tactic
+repeatN 0 tactic = Id
+repeatN m tactic = tactic $\rightarrowtail$ repeatN (m - 1) tactic
+\end{lstlisting}
+
+More complex tactics `compile' down into more primitive tactics.
+This sits in contrast to other systems where complex tactics are created by combining together primitive tactics with tacticals.
+
+One advantage of treating \mosquito tactics as data is that they may be manipulated as such.
+In particular, the $\mathtt{act}$ function induces an equational theory on $\mathtt{Tactic}$: say that two tactics $\mathtt{t}$ and $\mathtt{t'}$ are equivalent if for any $\mathtt{p}$ their resulting transformation of $\mathtt{p}$ using $\mathtt{act}$ is identical.
+Under this scheme, one would expect $\mathtt{Id \rightarrowtail t}$ and $\mathtt{t}$ to be equivalent, as well as $\mathtt{Repeat\ (FailWith\ err)}$ and $\mathtt{FailWith\ err}$, along with several other similar equalities.
+As such, we may write a tactic $\mathtt{optimise}$ of type $\mathtt{Tactic \rightarrow Tactic}$ which rewrites its input according to the equational theory induced by $\mathtt{act}$ and produces an `optimised' output.
+
+Several other tactics cause $\mathtt{act}$ to diverge on any proof state.
+For instance, the tactic $\mathtt{Repeat\ Id}$ will cause $\mathtt{act}$ to diverge, as $\mathtt{Id}$ always succeeds leaving the proof state unchanged.
+We may write a tactic $\mathtt{replaceBottoms}$ which rewrites its input, removing sources of divergence, and replacing them with a (converging) occurence of $\mathtt{FailWith\ err}$ where $\mathtt{err}$ contains some diagnostic information useful in tracking down the source of the divergence.
+
+Similarly, one may write a `tactic debugger', $\mathtt{debug}$, of type
+\begin{displaymath}
+\mathtt{ProofState \rightarrow Tactic \rightarrow Inference\ (ProofState,\ Maybe\ Tactic)}
+\end{displaymath}
+a function that small-steps through the transformation of a proof state under the action of a tactic.
+For example, $\mathtt{debug}$ when called with the tactic $\mathtt{t \rightarrowtail t'}$ and proof state $\mathtt{p}$ as input first applies $\mathtt{t}$ to $\mathtt{p}$.
+If this succeeds, it successfully returns the new proof state paired with $\mathtt{t'}$, otherwise failing.
+
+\section{Conclusions}
 \label{sect.conclusions}
+
+\mosquito is a stateless, pure, largely total implementation of higher-order logic in Haskell.
+
+\paragraph{Further work}
+Mosquito was initially conceived as a prototype kernel written in a style thought amenable for machine checked proof of correctness.
+We would like to see that proof of correctness carried out in the future: for both the kernel
 
 \bibliography{mulligan-mosquito-2013}
 
