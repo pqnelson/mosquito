@@ -13,7 +13,7 @@ where
   import Mosquito.Theories.Boolean
   import Mosquito.Theories.Utility
 
-  import Mosquito.Utility.Pretty
+  import qualified Mosquito.Utility.Pretty as P
 
   setType :: Type
   setType = mkFunctionType alphaType boolType
@@ -23,9 +23,10 @@ where
     trueC <- trueC
     return $ mkLam "x" setType trueC
 
-  setDefiningTheorem = do
+  setDefiningTheorem = P.putStrLn $ do
     charSet <- setCharacteristicFunction
     existsD <- existsD
+    trueD   <- trueD
     let s   =  mkVar "s" setType
     body    <- mkApp charSet s
     conj    <- mkExists "s" setType body

@@ -16,9 +16,9 @@
 \usepackage{tgpagella}
 \usepackage{xspace}
 
-\author{Dominic P. Mulligan\thanks{This work has benefitted from enlightening discussions with Thomas Tuerk and Ohad Kammar.}}
+\author{Dominic P. Mulligan}
 \title{Mosquito: an implementation of higher-order logic}
-%\subtitle{(Rough diamond)}
+\subtitle{(Rough diamond)}
 \titlerunning{Mosquito}
 \institute{Computer Laboratory, University of Cambridge}
 
@@ -72,51 +72,51 @@
 \maketitle
 
 \begin{abstract}
-We present \mosquito: a stateless, pure, largely total LCF-style implementation of higher-order logic, using Haskell as a metalanguage.
+We present \mosquito: a stateless, pure, largely total \textsc{lcf}-style implementation of higher-order logic using Haskell as a metalanguage.
 We discuss details of the logic implemented, kernel design and novel proof state and tactic representations.
 \end{abstract}
 
-\mosquito is an LCF-style implementation of higher-order logic (HOL) using Haskell as its metalanguage.
-The system is under active development.
-Some simple proofs, both forward and backward, have been performed in the system: Boolean, pair and set theories are under construction, for instance.
-\mosquito's source code may be obtained anonymously from a public Mercurial respository and is developed with the Glasgow Haskell Compiler (GHC)~7.6.2.\footnote{\url{https://bitbucket.org/MosquitoProofAssistant/mosquito}}
+\mosquito is an \textsc{lcf}-style implementation of higher-order logic (\textsc{hol}) using Haskell as its metalanguage.
+The system is under active development and has been written in a manner thought expressly suitable for formalisation in an existing proof assistant.
+Some simple proofs, both forward and backward, have been performed in the system: Boolean, pair, function and set theories are under construction, for instance.
+\mosquito's source code may be obtained anonymously from a public Mercurial respository and is developed with the Glasgow Haskell Compiler (\textsc{ghc})~7.6.2.\footnote{\url{https://bitbucket.org/MosquitoProofAssistant/mosquito}}
 
-Existing LCF-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009}, and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
+Existing \textsc{lcf}-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009}, and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
 When extending the logic with definition of a new constant, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\vdash \mathtt{0 = 1}$ by transitivity and symmetry of equality.
 This, in the systems mentioned above, is managed by a stateful kernel wherein a mutable database of existing constant names is maintained and queried prior to admitting a new constant definition.
 
 Prevailing Haskell programming style attempts to avoid the use of imperative update and maintenance of implicit state, whenever possible.
 Rather, explicit state tends to be passed around, with a monadic style of programming adopted to assuage the pain of such explicit state passing.
-However, a na\"ive translation of an existing LCF-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system, as well as exposing a potentially cumbersome \textsc{api} to the programmer.
+However, a na\"ive translation of an existing \textsc{lcf}-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system, as well as exposing a potentially cumbersome \textsc{api} to the programmer.
 %A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
 
-As Wiedijk noted, there is a simple method for writing a stateless HOL kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using state, whilst retaining the elegance of the original stateful design.
+As Wiedijk noted, there is a simple method for writing a stateless \textsc{hol} kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using implicit state, whilst retaining the elegance of the original stateful design.
 Constants can be represented as a compound type consisting of their name as well as their definition, rather than simply their name as in e.g. HOL Light.
 A constant $\mathtt{C}$ is now only equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition.
 Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ is now `safe'---at least from a point of view concerned purely with consistency of the logic---as a deduction of $\vdash \mathtt{0 = 1}$ is no longer possible.
 A similar scheme is used to tag type formers, and the associated \emph{abstraction} and \emph{representation} constants, for new types with their defining theorems.
 We adopt this method in the design of \mosquito.
 
-\paragraph{Why develop another proof assistant?  Why choose HOL?}
+\paragraph{Why develop another proof assistant?  Why choose \textsc{hol}?}
 By controlling state and adopting a monadic programming style, disavowing the use of exceptions to signal failure, and maintaining totality as far as possible, it is hoped the resulting system is easier to formalise in an existing proof assistant than systems such as HOL4 and HOL Light.
 The clean-slate development of a new kernel also permits rapid experimentation, with e.g. tactics and backwards proof.
 Concordantly, we started developing machinery atop the kernel, such as tactics and proof state representations, as well as conducting proofs of simple conjectures in the system.
 
-HOL is a simple, well understood and widely implemented logic.
+\textsc{hol} is a simple, well understood and widely implemented logic.
 The logic can be described in a handful of inference rules.
-Nevertheless, HOL has a proven track record in capturing large swathes of mathematics and computer science.
+Nevertheless, \textsc{hol} has a proven track record in capturing large swathes of mathematics and computer science.
 
-Further, by implementing HOL, one may leverage existing expertise and tools.
+Further, by implementing \textsc{hol}, one may leverage existing expertise and tools.
 In time, proofs developed in other implementations may be imported and exported via OpenTheory~\cite{hurd:opentheory:2011}.
 Similarly, automated proof tools already implemented and well tested may also be used in \mosquito~\cite{kumar:standalone:2012}.
-By choosing to implement HOL, we may quickly develop a system by piggybacking on the work of those that have laboured before us.
+By choosing to implement \textsc{hol}, we may quickly develop a system by piggybacking on the work of those that have laboured before us.
 
-Mosquito fills a niche: it's an implementation of vanilla HOL---potentially maintaining interoptability with existing HOLs via OpenTheory---using Haskell, not an ML dialect, as its metalanguage.
+Mosquito fills a niche: it's an implementation of vanilla \textsc{hol}---potentially maintaining interoptability with existing \textsc{hol}s via OpenTheory---using Haskell, not an ML dialect, as its metalanguage.
 
 \paragraph{Related work}
-Multiple implementations of HOLs and similar systems exist, though two existing systems are particularly closely related.
+Multiple implementations of \textsc{hol}s and similar systems exist, though two existing systems are particularly closely related.
 Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} is a modification of HOL Light with a stateless kernel.
-Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is a Wiedijk-style stateless implementation of HOL extended with System-F style polymorphism, also using Haskell as a metalanguage.
+Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is a Wiedijk-style stateless implementation of \textsc{hol} extended with System-F style polymorphism, also using Haskell as a metalanguage.
 
 \begin{figure}
 \begin{gather*}
@@ -208,14 +208,16 @@ Austin and Alexander's HaskHOL~\cite{austin:stateless:2013} is a Wiedijk-style s
 \label{fig.rules}
 \end{figure}
 
-\subsection*{\mosquito's logic}
-\label{sect.logic}
+\noindent\newline
+\textbf{Mosquito's logic}
+\newline
+
 \mosquito implements a similar higher-order logic to the HOL Light system.
 Terms $t$, $u$, and so on, are terms of the simply-typed $\lambda$-calculus extended with constants.
 The full derivation rules for the core logic are presented in Figure~\ref{fig.rules}.
 Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ is the set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution instantiating types in terms, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is its pointwise extension to a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$).
 
-\mosquito follows the well-worn LCF design philosophy.
+\mosquito follows the well-worn \textsc{lcf} design philosophy.
 The kernel exposes several abstract types: $\mathtt{Term}$, $\mathtt{Type}$ and $\mathtt{Theorem}$.
 Modulo bugs in the design of Haskell or the GHC implementation the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
 
@@ -244,8 +246,9 @@ A new inhabited type may be defined in provable bijection with a subset of an ex
 Lastly, a formula may be asserted freeform as an axiom.
 As axioms are `dangerous' from a consistency point of view, \mosquito, indelibly marks any theorem obtained directly or indirectly from an axiom.
 
-\subsection*{Tactics and the proof state}
-\label{sect.tactics.proof.state}
+\noindent\newline
+\textbf{Tactics and the proof state}
+\newline
 
 \mosquito supports forward proof directly by implementing the rules in Figure~\ref{fig.rules}.
 For more complex proofs backward proof may be more amenable.
@@ -262,9 +265,8 @@ qed :: ProofState $\rightarrow$ Inference Theorem
 act :: ProofState $\rightarrow$ Tactic $\rightarrow$ Inference ProofState
 \end{lstlisting}
 
-A new proof state is constructed using $\mathtt{mkConjecture}$, taking a term as input and creating a derivation tree consisting of a selected hole.
+A new proof state is constructed using $\mathtt{mkConjecture}$, taking a formula (failing otherwise) as input and creating a derivation tree consisting of a selected hole.
 This hole has no assumptions and has the input term as its goal.
-The function fails if the input term is not a formula.
 
 A theorem is obtained from a completed backward proof using $\mathtt{qed}$.
 This function fails if the justification functions annotating the derivation tree do not correctly replay the proof in a forward direction, a theorem that fails to match the original conjecture is synthesised, or if the derivation tree remains incomplete.
@@ -288,32 +290,32 @@ Assume $\mathtt{p}$ is an arbitrary proof state.
 Then:
 \begin{itemize*}
 \item
-A call to $\mathtt{act\ p\ (FailWith\ err)}$ will result in failure, with $\mathtt{err}$ as a diagnostic error message, whilst a call to $\mathtt{act\ p\ Id}$ will always successfully return $\mathtt{p}$.
+A call to $\mathtt{act\ p\ (FailWith\ err)}$ fails on every selected hole.
+A call to $\mathtt{act\ p\ Id}$ succeeds on every selected hole, keeping the hole (and thus the proof state $\mathtt{p}$) unchanged.
 \item
-A call to $\mathtt{act\ p\ (Try\ t)}$ first tries to apply $\mathtt{t}$, succeeding if this succeeds with the new proof state, or succeeding with the old proof state if this fails.
+A call to $\mathtt{act\ p\ (Try\ t)}$ tries to apply $\mathtt{t}$ at each selected hole.
+If $\mathtt{t}$ fails to transform a given hole, the original hole is successfully reinstated.
 \item
-A call to $\mathtt{act\ p\ (Repeat\ t)}$ tries to repeatedly (once or more) apply $\mathtt{t}$ to $\mathtt{p}$.
-The call returns the last proof state successfully modified by $\mathtt{t}$.
+A call to $\mathtt{act\ p\ (Repeat\ t)}$ tries to applies $\mathtt{t}$ at each selected hole, and then subsequently at any new selected holes opened.
+The tactic $\mathtt{t}$ must apply at least once, with the last proof state successfully modified by $\mathtt{t}$ returned.
 \item
-A call to $\mathtt{act\ p\ (t \rightarrowtail t')}$ will first try to transform $\mathtt{p}$ with $\mathtt{t}$.
-If that succeeds, then the resulting state will be transformed by $\mathtt{t'}$, otherwise the call results in failure.
+A call to $\mathtt{act\ p\ (t \rightarrowtail t')}$ first applies $\mathtt{t}$ to each selected goal.
+If this does not fail, then $\mathtt{t'}$ is applied to each selected goal, otherwise the call results in failure.
 \item
-A call to $\mathtt{act\ p\ (t \oplus t')}$ will first try to transform $\mathtt{p}$ with $\mathtt{t}$.
-If this succeeds, then the new proof state is returned.
-Otherwise, the proof state is modified by $\mathtt{t'}$, with the result of that modification being returned.
+A call to $\mathtt{act\ p\ (t \oplus t')}$ tries to apply $\mathtt{t}$ to each selected goal.
+If this fails, then $\mathtt{t'}$ is applied to each selected goal instead.
 \end{itemize*}
-$\mathtt{Apply}$ is perhaps the most interesting constructor of the $\mathtt{Tactic}$ data type, lifting a \emph{pretactic} into a tactic.
+$\mathtt{Apply}$ lifts a \emph{pretactic} into a tactic.
 Intuitively, a pretactic is a function that edits a selected hole in the derivation tree.
 A pretactic is supplied with the assumptions and goal to prove at that hole, and may either choose to fail with an error at that hole or succeed, returning a list of new subgoals which are spliced into the derivation tree as new holes.
 Pretactics have an entirely `local' view of the derivation tree---they see only information present at a hole, and are not supplied with information about the rest of the tree.
 
-As an example, we discuss the operation of $\mathtt{alphaPreTactic}$, which closes subgoals of the form $A_1 \ldots A_n \vdash_? t = u$, where $t$ and $u$ are $\alpha$-equivalent terms.
-The pretactic is supplied with the assumptions list $A_1 \ldots A_n$ and with the goal to prove $t = u$ at that hole.
-It pulls apart the goal, ensuring it is an equality, otherwise failing.
-It then pulls apart the equality, ensuring the two equated terms are $\alpha$-equivalent, otherwise failing.
-Should these preconditions be met, the pretactic returns an empty list of new subgoals, coupled with a justification function that makes use of the implementation of \rulefont{alpha} from Figure~\ref{fig.rules} to `reverse' its operation.
+We discuss the operation of $\mathtt{alphaPreTactic}$ as an example, which closes subgoals $A_1 \ldots A_n \vdash_? t = u$ where $t$ and $u$ are $\alpha$-equivalent.
+The pretactic receives the assumptions $A_1 \ldots A_n$ and the goal to prove $t = u$ at a given hole.
+It ensures the goal is an equality, and the equated terms $t$, $u$ are $\alpha$-equivalent.
+If so, the pretactic generates an empty list of new subgoals, coupled with a justification function that makes use of the implementation of \rulefont{alpha} from Figure~\ref{fig.rules} to `reverse' its operation.
 
-The $\mathtt{Tactic}$ embedding may be minimalist, but more complex tactics\footnote{We abuse language and refer to any $\mathtt{Tactic}$-valued Haskell function as a tactic.} may be written over this type.
+The $\mathtt{Tactic}$ embedding may be minimalist, but more complex tactics\footnote{Henceforth we abuse language and call any $\mathtt{Tactic}$-valued Haskell function a tactic.} may be written over this type.
 For instance, the tactic $\mathtt{repeatN}$ repeatedly applies a tactic $\mathtt{m}$ times to a given proof state:
 \begin{lstlisting}
 repeatN :: Int $\rightarrow$ Tactic $\rightarrow$ Tactic
@@ -324,24 +326,24 @@ repeatN m tactic = tactic $\rightarrowtail$ repeatN (m - 1) tactic
 More complex tactics `compile' down into more primitive tactics.
 This sits in contrast to other systems where complex tactics are created by combining together primitive tactics with tacticals.
 
-Treating tactics as data means tactics may be written that inspect other tactics.
-The $\mathtt{act}$ function induces an equational theory on $\mathtt{Tactic}$: say that two tactics $\mathtt{t}$ and $\mathtt{t'}$ are equivalent if for any $\mathtt{p}$ their resulting transformation of $\mathtt{p}$ using $\mathtt{act}$ is identical.
-Under this scheme, one would expect various equivalences, for example $\mathtt{Id \rightarrowtail t}$ and $\mathtt{t}$, or $\mathtt{Repeat\ (FailWith\ err)}$ and $\mathtt{FailWith\ err}$.
+Embedding tactics as a data type permits us to write `metatactics', or tactics that inspect and change other tactics.
+The $\mathtt{act}$ function induces equivalences on $\mathtt{Tactic}$: say that two tactics $\mathtt{t}$ and $\mathtt{t'}$ are equivalent if for any $\mathtt{p}$ their resulting transformation of $\mathtt{p}$ using $\mathtt{act}$ is identical.
+For example $\mathtt{Id \rightarrowtail t}$ and $\mathtt{t}$ and $\mathtt{Repeat\ (FailWith\ err)}$ and $\mathtt{FailWith\ err}$ are equivalent.
 Following this, we may write a tactic $\mathtt{optimise}$ which rewrites its input according to these equational laws, producing an equivalent but `optimised' output.
 
 Several tactics cause divergence of $\mathtt{act}$, for example $\mathtt{Repeat\ Id}$.
 Adopting the position that diverging tactics are buggy, we may write a tactic $\mathtt{replaceBottoms}$ which inspects its input, replacing diverging tactics with $\mathtt{FailWith\ err}$, where $\mathtt{err}$ contains information useful in tracking down the source of the divergence.
 
-Similarly, if we were interested in the small-step evolution of the proof state under the action of a given tactic, we could use a tactic `debugger', of type $\mathtt{ProofState \rightarrow Tactic \rightarrow Inference\ (ProofState,\ Maybe\ Tactic)}$.
+Lastly, we may examine the small-step evolution of the proof state under the action of a given tactic using a `debugger', which takes a proof state and a tactic and returns $\mathtt{Inference\ (ProofState,\ Maybe\ Tactic)}$.
 For example, $\mathtt{debug}$, called on tactic $\mathtt{t \rightarrowtail t'}$ and proof state $\mathtt{p}$, first applies $\mathtt{t}$ to $\mathtt{p}$.
 If this succeeds, it successfully returns the new proof state paired with $\mathtt{t'}$, otherwise failing.
 
-\subsection*{Conclusions}
-\label{sect.conclusions}
+\noindent\newline
+\textbf{Conclusions}
+\newline
 
-\mosquito is an implementation of HOL written in Haskell.
-It features a Wiedijk-style stateless kernel, with a novel proof state and tactic representation built atop.
-Some proofs of simple conjectures have been carried out in the system.
+\mosquito is an Wiedijk-style stateless implementation of \textsc{hol} written in Haskell.
+Some backward and forward proofs of simple conjectures have been carried out in the system.
 
 Several lines for further work remain.
 How efficient \mosquito is at certifying large proofs remains unresolved, though this could be tested by importing existing proofs developed in other systems via OpenTheory.

@@ -26,12 +26,13 @@ module Mosquito.Kernel.Term (
   boolQualifiedName, functionQualifiedName,
   boolDescription, functionDescription,
   -- * HOL types
-  Type,
+  Type, TypeView(..), typeView,
   isTyVar, isTyOperator, isFunction, isProposition,
   fromTyOperator, fromTyVar, fromFunction,
   mkTyVar, mkTyOperator,
   alphaName, alphaType, boolType,
   mkFunctionType,
+  tv,
   -- * Constant descriptions
   ConstantDescription,
   isDefinedConstantDescription, isPrimitiveConstantDescription,
@@ -39,7 +40,7 @@ module Mosquito.Kernel.Term (
   constantDescriptionType, constantDescriptionQualifiedName, constantDescriptionDefinition,
   equalityType, equalityQualifiedName, equalityDescription,
   -- * HOL terms
-  Term,
+  Term, TermView(..), termView,
   mkVar, mkConst, mkApp, mkLam,
   isVar, isConst, isApp, isLam,
   fromVar, fromConst, fromApp, fromLam,
@@ -47,13 +48,11 @@ module Mosquito.Kernel.Term (
   typeOf,
   -- ** Alpha-equivalence and free variables
   fv, fvs, permute,
-  -- ** Structural equality
-  StructuralEquality, mkStructuralEquality,
   -- ** Equality within the logic
   equality, isEquality,
   fromEquality, mkEquality,
   -- * Substitutions
-  Substitution, mkSubstitution,
+  Substitution, empty, compose, mkSubstitution,
   -- ** Type substitutions
   typeSubst,
   -- ** Term substitutions
@@ -234,6 +233,17 @@ where
     = TyVar      String
     | TyOperator TypeOperatorDescription [Type]
     deriving(Eq, Show, Ord)
+
+  -- |A view type for HOL types, for pattern matching purposes outside of the kernel.
+  data TypeView
+    = TyVarView      String
+    | TyOperatorView TypeOperatorDescription [Type]
+
+  -- |A view function that converts HOL types into their views, for pattern matching
+  --  purposes outside of the kernel.
+  typeView :: Type -> TypeView
+  typeView (TyVar t)           = TyVarView t
+  typeView (TyOperator d args) = TyOperatorView d args
 
   --
   -- ** Utility functions on types.
@@ -449,6 +459,21 @@ where
     | Lam   String Type Term
     deriving(Show, Ord)
 
+  -- |A view type for HOL terms which allows pattern matching outside of
+  --  the kernel.
+  data TermView
+    = VarView   String Type
+    | ConstView ConstantDescription
+    | AppView   Term Term
+    | LamView   String Type Term
+
+  -- |A view function for converting HOL terms into their views.
+  termView :: Term -> TermView
+  termView (Var v ty)   = VarView v ty
+  termView (Const c)    = ConstView c
+  termView (App l r)    = AppView l r
+  termView (Lam n ty b) = LamView n ty b
+
   --
   -- * Utility functions on terms.
   --
@@ -494,7 +519,7 @@ where
       else
         fail . unwords $ [
           unwords ["mkApp: Right hand term `", pretty r, "'"]
-        , unwords ["does not have type matching domain type of left hand term: `", pretty l, "'"]
+        , unwords ["does not have type matching domain type of left hand term: `", pretty l, "'."]
         , unwords ["Expecting `", pretty dom, "' but found `", pretty typeOfR, "'."]
         ]
 
@@ -601,6 +626,12 @@ where
 
   mkSubstitution :: [(String, a)] -> Substitution a
   mkSubstitution = Substitution
+
+  empty :: Substitution a
+  empty = Substitution []
+
+  compose :: Substitution a -> Substitution a -> Substitution a
+  compose (Substitution left) (Substitution right) = Substitution $ left ++ right
 
   domain :: Ord a => Substitution a -> S.Set String
   domain (Substitution ss) = S.fromList . map fst $ ss

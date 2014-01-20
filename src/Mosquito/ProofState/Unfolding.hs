@@ -5,9 +5,13 @@ module Mosquito.ProofState.Unfolding (
   reductionLocalEdit, reductionPreTactic, reductionTactic
 ) where
 
+  import Debug.Trace
+
   import Prelude hiding (fail, repeat)
 
   import Control.Monad hiding (fail, (>=>))
+
+  import Mosquito.TermUtilities
 
   import Mosquito.Kernel.Term
 
@@ -16,11 +20,49 @@ module Mosquito.ProofState.Unfolding (
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
 
+  import Mosquito.Utility.Pretty
+
+{-
+  data TermPath
+    = L -- ^ Go left through an application
+    | R -- ^ Go right through an application
+    | U -- ^ Go under a lambda-abstraction
+    | Y -- ^ Relevant part of the term
+    | N -- ^ Ignored part of the term
+
+  unfoldPathTactic :: [TermPath] -> TheoremTactic
+  unfoldPathTactic path theorem = apply localPreTactic
+    where
+      replacePath :: [TermPath] -> ConstantDescription -> Term -> Term -> Inference Term
+      replacePath 
+
+      local :: LocalEdit
+      local assms concl = do
+        userMark ["unfoldPathTactic.local:", pretty theorem, pretty concl]
+        (left, right) <- fromEquality . conclusion $ theorem
+        if isConst left then do
+          constant <- fromConst left
+          guess    <- replacePath path constant right concl
+          equalityModusPonensLocalEdit guess assms concl
+        else if isConst right then do
+          constant <- fromConst right
+          guess    <- replacePath path constant left concl
+          equalityModusPonensLocalEdit guess assms concl
+        else
+          fail . unwords $ [
+            "unfoldPathTactic.local: supplied definitional theorem to be used for"
+          , unwords ["unfolding: `", pretty theorem, "' is not an equality between"]
+          , "a constant and another term."
+          ]
+-}
+
+
   -- |Unfolds a definition supplied as a theorem and then immediately solves
   --  extraneous subgoals, changing the goal to prove into the original goal
   --  with the constant unfolded.
   unfoldTactic :: TheoremTactic
-  unfoldTactic theorem = apply localPreTactic
+  unfoldTactic theorem =
+      apply localPreTactic
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =
@@ -34,9 +76,12 @@ module Mosquito.ProofState.Unfolding (
           nBody <- replace dom rng body
           return $ mkLam n ty nBody
         else if isConst t then do
+          typT  <- Debug.Trace.trace ("XXX t:"   ++ pretty (typeOf t) ++ " " ++ pretty t)   $ typeOf t
+          typR  <- Debug.Trace.trace ("XXX rng:" ++ pretty (typeOf rng) ++ " " ++ pretty rng) $ typeOf rng
+          unif  <- unifyTypes typT typR
           descr <- fromConst t
-          if descr == dom then
-            return rng
+          if constantDescriptionDefinition descr == constantDescriptionDefinition dom then
+            return $ termTypeSubst unif rng
           else
             return t
         else return t
