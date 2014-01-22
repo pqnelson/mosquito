@@ -1,6 +1,6 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
-module Mosquito.Theories.Boolean (
+module Mosquito.Theories.Boolean {- (
   -- * Utility functions and definitions
   binaryConnectiveType, quantifierType,
   constantOfDecl, theoremOfDecl,
@@ -33,7 +33,7 @@ module Mosquito.Theories.Boolean (
   -- ** If, and only if
   iffDecl, iffC, iffD,
   mkIff, fromIff
-) where
+) -} where
 
   import Prelude hiding (fail, repeat)
 
@@ -229,7 +229,8 @@ module Mosquito.Theories.Boolean (
     (conjC, left) <- fromApp pre
     return (left, right)
 
-  {- conjunctionI :: Inference Theorem
+{-
+  conjunctionIThm :: Inference Theorem
   conjunctionIThm left right = Mosquito.Utility.Pretty.putStrLn $ do
       trueC        <- trueC
       conjunctionD <- conjunctionD
@@ -270,11 +271,8 @@ module Mosquito.Theories.Boolean (
 
       f :: Term
       f = mkVar "f" binaryConnectiveType
-
-  test = do
-    let true = inference trueI undefined id
-    conjunctionIThm true true
-  -}
+-}
+  
 
   --
   -- ** Implication

@@ -8,9 +8,7 @@ module Mosquito.DerivedRules (
   -- * Restricted combination rules
   combineL, combineR,
   -- * Lambda-abstraction
-  abstracts,
-  -- * Reductions
-  betas
+  abstracts
 ) where
 
   import Prelude hiding (fail)
@@ -50,16 +48,3 @@ module Mosquito.DerivedRules (
     foldr (\(name, ty) prev -> do
       nPrev <- prev
       abstract name ty nPrev) (return thm) xs
-
-  betas :: Term -> Inference Theorem
-  betas = go . unfoldAppsL
-    where
-      go :: [Term] -> Inference Theorem
-      go []         = fail "`betas'"
-      go [x]        = reflexivity x
-      go (x:xs:xss) = do
-        app        <- mkApp x xs
-        b          <- beta app
-        (_, r)     <- fromEquality . conclusion $ b
-        tl         <- go $ r:xss
-        transitivity b tl

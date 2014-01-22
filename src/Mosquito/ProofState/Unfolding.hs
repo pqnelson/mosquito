@@ -62,7 +62,7 @@ module Mosquito.ProofState.Unfolding (
   --  with the constant unfolded.
   unfoldTactic :: TheoremTactic
   unfoldTactic theorem =
-      apply localPreTactic
+      apply localPreTactic >=> pointwiseTactic >=> autoSolveTactic theorem
     where
       replace :: ConstantDescription -> Term -> Term -> Inference Term
       replace dom rng t =
@@ -76,12 +76,9 @@ module Mosquito.ProofState.Unfolding (
           nBody <- replace dom rng body
           return $ mkLam n ty nBody
         else if isConst t then do
-          typT  <- Debug.Trace.trace ("XXX t:"   ++ pretty (typeOf t) ++ " " ++ pretty t)   $ typeOf t
-          typR  <- Debug.Trace.trace ("XXX rng:" ++ pretty (typeOf rng) ++ " " ++ pretty rng) $ typeOf rng
-          unif  <- unifyTypes typT typR
           descr <- fromConst t
           if constantDescriptionDefinition descr == constantDescriptionDefinition dom then
-            return $ termTypeSubst unif rng
+            return rng
           else
             return t
         else return t
