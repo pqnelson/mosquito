@@ -31,5 +31,5 @@ where
     body    <- mkApp charSet s
     conj    <- mkExists "s" setType body
     prf     <- mkConjecture "setDefiningTheorem" conj
-    prf     <- act prf $ unfoldTactic existsD
+    prf     <- act prf . Apply $ unfoldConstantPreTactic existsD
     return prf

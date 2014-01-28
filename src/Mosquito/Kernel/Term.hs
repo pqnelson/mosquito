@@ -376,7 +376,16 @@ where
     | PrimitiveConstant          QualifiedName Type
     | TypeAbstractionConstant    QualifiedName QualifiedName Arity Type Theorem
     | TypeRepresentationConstant QualifiedName QualifiedName Arity Type Theorem
-    deriving(Eq, Show, Ord)
+    deriving(Show, Ord)
+
+  instance Eq ConstantDescription where
+    (DefinedConstant name ty defn) == (DefinedConstant name' _ defn') = name == name' && defn == defn'
+    (PrimitiveConstant name _) == (PrimitiveConstant name' _) = name == name'
+    (TypeAbstractionConstant name name' arity _ defn) == (TypeAbstractionConstant name'' name''' arity' _ defn') =
+      name == name'' && name' == name''' && arity == arity' && defn == defn'
+    (TypeRepresentationConstant name name' arity _ defn) == (TypeRepresentationConstant name'' name''' arity' _ defn') =
+      name == name'' && name' == name''' && arity == arity' && defn == defn'
+    _ == _ = False
 
   --
   -- * Utility functions on constant descriptions.
@@ -800,7 +809,7 @@ where
   -- TODO: print mixfix syntax correctly like for types.
   instance Pretty Term where
     pretty (Var a _)     = a
-    pretty (Const d)      = pretty d
+    pretty (Const d)      = pretty d --unwords [pretty d, ":", pretty $ constantDescriptionType d]
     pretty (App (App (Const d) c) r)
       -- XXX: this needs properly fixing for arbitrary mixfix syntax
       | isInfix . constantDescriptionQualifiedName $ d = unwords [bracket c, pretty d, bracket r]
@@ -961,7 +970,8 @@ where
     return $ Theorem (p `track` q) (hyps'', eq)
 
   -- |Produces a derivation of @Gamma ⊢ λx:ty. t = λx:ty. u@ given a derivation
-  -- of the form @Gamma ⊢ t = u@.
+  --  of the form @Gamma ⊢ t = u@ providing @x@ does not appear free in the
+  --  context @Gamma@.
   abstract :: String -> Type -> Theorem -> Inference Theorem
   abstract name ty (Theorem p (hyps, concl)) = do
     kernelMark ["abstract:", name, pretty ty, pretty concl]

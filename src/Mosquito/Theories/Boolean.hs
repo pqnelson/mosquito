@@ -41,6 +41,7 @@ module Mosquito.Theories.Boolean {- (
   import Mosquito.Kernel.QualifiedName
 
   import Mosquito.ProofState.Automation
+  import Mosquito.ProofState.Conversionals
   import Mosquito.ProofState.ProofState
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
@@ -70,12 +71,13 @@ module Mosquito.Theories.Boolean {- (
   trueD = theoremOfDecl trueDecl
 
   -- |Produces a derivation of @{} ⊢ true@.
-  trueI :: Inference Theorem
-  trueI = do
+  trueIThm :: Inference Theorem
+  trueIThm = do
     trueC <- trueC
     trueD <- trueD
     conj  <- mkConjecture "trueI" trueC
-    conj  <- act conj . unfoldTactic $ trueD
+    conj  <- act conj $ Apply (unfoldConstantPreTactic trueD)
+    conj  <- act conj $ Apply alphaPreTactic
     qed conj
 
   trueILocalEdit :: LocalEdit
@@ -83,7 +85,7 @@ module Mosquito.Theories.Boolean {- (
     userMark ["trueILocalEdit:", pretty concl]
     trueC <- trueC
     if concl == trueC then
-      return (\[] -> trueI, [])
+      return (\[] -> trueIThm, [])
     else
       fail . unwords $ [
         "Conclusion passed to `trueIPreTac' not `true'."
@@ -95,9 +97,9 @@ module Mosquito.Theories.Boolean {- (
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma ⊢ p = true@.
-  trueEqE :: Theorem -> Inference Theorem
-  trueEqE theorem = do
-    trueI <- trueI
+  trueEqEThm :: Theorem -> Inference Theorem
+  trueEqEThm theorem = do
+    trueI <- trueIThm
     symm  <- symmetry theorem
     equalityModusPonens symm trueI
 
@@ -106,22 +108,22 @@ module Mosquito.Theories.Boolean {- (
     userMark ["trueEqELocalEdit:", pretty concl]
     trueC <- trueC
     eq <- mkEquality concl trueC
-    return (\[t] -> trueEqE t, [(assms, eq)])
+    return (\[t] -> trueEqEThm t, [(assms, eq)])
 
   trueEqEPreTactic :: PreTactic
   trueEqEPreTactic = mkPreTactic "trueEqEPreTactic" trueEqELocalEdit
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
-  trueEqI :: Theorem -> Inference Theorem
-  trueEqI theorem = do
+  trueEqIThm :: Theorem -> Inference Theorem
+  trueEqIThm theorem = do
     let p =  conclusion theorem
     assmP <- assume p  -- p ⊢ p
-    trueI <- trueI     -- {} ⊢ true
+    trueI <- trueIThm     -- {} ⊢ true
     das1  <- deductAntiSymmetric assmP trueI -- p ⊢ p = true
     let c =  conclusion das1
     assmC <- assume c -- p = true ⊢ p = true
-    eqE   <- trueEqE assmC -- p = true ⊢ p
+    eqE   <- trueEqEThm assmC -- p = true ⊢ p
     das2  <- deductAntiSymmetric das1 eqE -- ⊢ p = (p = true)
     symm  <- symmetry das2
     equalityModusPonens symm theorem
@@ -132,7 +134,7 @@ module Mosquito.Theories.Boolean {- (
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
-      return $ (\[t] -> trueEqI t, [(assms, left)])
+      return $ (\[t] -> trueEqIThm t, [(assms, left)])
     else
       fail "`trueEqILocalEdit'"
 
@@ -229,50 +231,23 @@ module Mosquito.Theories.Boolean {- (
     (conjC, left) <- fromApp pre
     return (left, right)
 
-{-
-  conjunctionIThm :: Inference Theorem
-  conjunctionIThm left right = Mosquito.Utility.Pretty.putStrLn $ do
-      trueC        <- trueC
-      conjunctionD <- conjunctionD
-      preApp       <- mkApp f (conclusion left)
-      app          <- mkApp preApp (conclusion right)
-      preApp'      <- mkApp f trueC
-      app'         <- mkApp preApp' trueC
-      eq           <- mkEquality (mkLam "f" binaryConnectiveType app) (mkLam "f" binaryConnectiveType app')
-      conj         <- mkConjunction (conclusion left) (conclusion right)
-      prf          <- mkConjecture "conjunctionI" conj
-      prf          <-
-        act prf . every $ [
-          unfoldTactic conjunctionD
-        , apply $ equalityModusPonensPreTactic eq
-        , try pointwiseTactic
-        , try . apply $ trueEqIPreTactic
-        , apply symmetryPreTactic
-        , try . apply $ beta2PreTactic
-        , try . apply $ betaPreTactic
-        , try (reductionTactic >=> pointwiseTactic)
-        , try (apply symmetryPreTactic >=> apply trueEqIPreTactic)
-        , repeat (apply (solvePreTactic left) <|> apply (solvePreTactic right))
-        ]
-      qed prf
-    where
-      beta2LocalEdit :: LocalEdit
-      beta2LocalEdit assms concl = do
-        userMark ["beta2LocalEdit:", pretty concl]
-        (left, right) <- fromEquality concl
-        (app, arg)    <- fromApp left
-        app'          <- betaReduce app
-        trm           <- mkApp app' arg
-        new           <- mkEquality trm right
-        return ((\[t, t'] -> equalityModusPonens t t'), [(assms, trm), (assms, new)])
+  conjunctionIThm :: Theorem -> Theorem -> Inference Theorem
+  conjunctionIThm left right = do
+    conjunctionD <- conjunctionD
+    conj         <- mkConjunction (conclusion left) (conclusion right)
+    prf          <- mkConjecture "conjunctionI" conj
+    prf          <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
+    prf          <- act prf . Apply $ betaReducePreTactic
+    prf          <- act prf . Apply $ alphaPreTactic
+    qed prf
 
-      beta2PreTactic :: PreTactic
-      beta2PreTactic = mkPreTactic "beta2PreTactic" beta2LocalEdit
+  conjunctionILocalEdit :: LocalEdit
+  conjunctionILocalEdit assms concl = do
+    (left, right) <- fromConjunction concl
+    return (\[left, right] -> conjunctionIThm left right, [(assms, left), (assms, right)])
 
-      f :: Term
-      f = mkVar "f" binaryConnectiveType
--}
-  
+  conjunctionIPreTactic :: PreTactic
+  conjunctionIPreTactic = mkPreTactic "conjunctionIPreTactic" conjunctionILocalEdit
 
   --
   -- ** Implication
@@ -460,3 +435,97 @@ module Mosquito.Theories.Boolean {- (
     (pre, right) <- fromApp body
     (iffC, left) <- fromApp pre
     return (left, right)
+
+  --
+  -- * Misc
+  --
+
+  -- | Produces a derivation of @{} ⊢ forall t. t = t@.
+  reflexivityThm :: Inference Theorem
+  reflexivityThm = do
+    forallD <- forallD
+    let t = mkVar "t" alphaType
+    eq    <- mkEquality t t
+    conj  <- mkForall "t" alphaType eq
+    prf   <- mkConjecture "reflexivityThm" conj
+    prf   <- act prf . Apply $ unfoldConstantPreTactic forallD
+    prf   <- act prf . Apply $ betaReducePreTactic
+    prf   <- act prf . Apply $ abstractPreTactic
+    prf   <- act prf . Apply $ trueEqIPreTactic
+    prf   <- act prf . Apply $ alphaPreTactic
+    qed prf
+
+  -- tImpliesTThm :: Inference Theorem
+  tImpliesTThm = Mosquito.Utility.Pretty.putStrLn $ do
+    forallD      <- forallD
+    implicationD <- implicationD
+    conjunctionD <- conjunctionD
+    let t = mkVar "t" boolType
+    body <- mkImplication t t
+    conj <- mkForall "t" boolType body
+    prf  <- mkConjecture "tImpliesTThm" conj
+    prf  <- act prf . Apply $ unfoldConstantPreTactic forallD
+    prf  <- act prf . Apply $ betaReducePreTactic
+    prf  <- act prf . Apply $ abstractPreTactic
+    prf  <- act prf . Apply $ unfoldConstantPreTactic implicationD
+    prf  <- act prf . Apply $ betaReducePreTactic
+    prf  <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
+    prf  <- act prf . Apply $ betaReducePreTactic
+    prf    <- act prf . Apply $ trueEqIPreTactic
+    return prf
+
+  unfoldConstantsTactic :: [Theorem] -> Tactic
+  unfoldConstantsTactic [] = Id
+  unfoldConstantsTactic (x:xs) = Apply (unfoldConstantPreTactic x) >=> unfoldConstantsTactic xs
+
+  mkApps :: [Term] -> Inference Term
+  mkApps (x:[xs]) = mkApp x xs
+  mkApps (x:y:xs)   = do
+    head <- mkApp x y
+    mkApps $ head:xs
+  mkApps _ = fail "makeApps"
+
+  -- symmetryThm :: Inference Theorem
+  symmetryThm = Mosquito.Utility.Pretty.putStrLn $ do
+    forallD <- forallD
+    implicationD <- implicationD
+    conjunctionD <- conjunctionD
+    let t = mkVar "t" alphaType
+    let u = mkVar "u" alphaType
+    let k = mkLam "x" boolType . mkLam "y" boolType $ mkVar "x" boolType
+    tu    <- mkEquality t u
+    ut    <- mkEquality u t
+    ktu   <- mkApps [k, tu, ut]
+    body  <- mkImplication tu ut
+    conj'  <- mkForall "u" alphaType body
+    conj   <- mkForall "t" alphaType conj'
+    prf    <- mkConjecture "symmetryThm" conj
+    prf    <- act prf $ unfoldConstantsTactic [forallD, implicationD, conjunctionD]
+    prf    <- act prf . Apply $ betaReducePreTactic
+    prf    <- act prf . repeatN 2 $ Apply abstractPreTactic >=> Apply trueEqIPreTactic
+    prf    <- act prf . Apply $ deductAntiSymmetricPreTactic
+    prf    <- act prf . Try $ Apply abstractPreTactic >=> Apply combinePreTactic
+    prf    <- act prf . Try $ Apply trueEqIPreTactic >=> Apply symmetryPreTactic >=> Apply assumePreTactic
+    prf    <- act prf . Try $ Apply combinePreTactic >=> Try (Apply alphaPreTactic) >=> Apply trueEqIPreTactic >=> Apply assumePreTactic
+    prf    <- act prf . Apply $ trueEqEPreTactic
+    prf    <- act prf . Apply $ equalityModusPonensPreTactic ktu
+    --prf    <- act prf . Apply $ unfoldConstantPreTactic forallD
+    --prf    <- act prf . Apply $ betaReducePreTactic
+    --prf    <- act prf . Apply $ abstractPreTactic
+    --prf    <- act prf . Apply $ trueEqIPreTactic
+    --prf    <- act prf . Apply $ unfoldConstantPreTactic implicationD
+    --prf    <- act prf . Apply $ betaReducePreTactic
+    --prf    <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
+    --prf    <- act prf . Apply $ betaReducePreTactic
+    --prf    <- act prf . Apply $ abstractPreTactic
+    --prf    <- act prf . Apply $ trueEqIPreTactic
+    --prf    <- act prf . Apply $ deductAntiSymmetricPreTactic
+    --prf    <- act prf . Try . Apply $ abstractPreTactic
+    --prf    <- act prf . Try . Apply $ combinePreTactic
+    --prf    <- act prf . Try . Apply $ combinePreTactic
+    --prf    <- act prf . Try . Apply $ alphaPreTactic
+    --prf    <- act prf . Try . Apply $ trueEqIPreTactic
+    --prf    <- act prf . Try . Apply $ assumePreTactic
+    --prf    <- act prf . Try $ Apply symmetryPreTactic >=> Apply assumePreTactic
+    --prf    <- act prf . Apply $ trueEqEPreTactic
+    return prf

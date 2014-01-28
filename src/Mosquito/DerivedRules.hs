@@ -29,15 +29,15 @@ module Mosquito.DerivedRules (
 
   -- |Produces a derivation of @Gamma ⊢ f x = f y@ from a derivation of
   --  @Gamma ⊢ x = y@ provided the supplied term @f@ is of the correct type.
-  combineL :: Term -> Theorem -> Inference Theorem
-  combineL t thm = do
+  combineR :: Term -> Theorem -> Inference Theorem
+  combineR t thm = do
     eq <- reflexivity t
     combine eq thm
 
   -- |Produces a derivation of @Gamma ⊢ f x = g x@ from a derivation of
   --  @Gamma ⊢ f = g@ provided the supplied term @x@ is of the correct type.
-  combineR :: Term -> Theorem -> Inference Theorem
-  combineR t thm = do
+  combineL :: Term -> Theorem -> Inference Theorem
+  combineL t thm = do
     eq <- reflexivity t
     combine thm eq
 

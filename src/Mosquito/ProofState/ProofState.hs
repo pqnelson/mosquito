@@ -31,7 +31,7 @@ module Mosquito.ProofState.ProofState (
     Unselected :: Selection
 
   data IncompleteDerivation where
-    Hole   :: Selection     -> [Theorem] -> Term -> IncompleteDerivation
+    Hole   :: Selection     -> [Term] -> Term -> IncompleteDerivation
     Branch :: Justification -> [IncompleteDerivation] -> IncompleteDerivation
 
   data ProofState

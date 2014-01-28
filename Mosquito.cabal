@@ -58,6 +58,7 @@ library
                        Mosquito.Theories.Set
                        Mosquito.Theories.Utility
                        Mosquito.ProofState.Automation
+                       Mosquito.ProofState.Conversionals
                        Mosquito.ProofState.PreTactics
                        Mosquito.ProofState.ProofState
                        Mosquito.ProofState.Tactics

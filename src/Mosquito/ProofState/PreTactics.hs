@@ -14,21 +14,30 @@ module Mosquito.ProofState.PreTactics (
   abstractLocalEdit, abstractPreTactic,
   combineLocalEdit, combinePreTactic,
   equalityModusPonensLocalEdit, equalityModusPonensPreTactic,
-  solveLocalEdit, solvePreTactic
+  deductAntiSymmetricLocalEdit, deductAntiSymmetricPreTactic,
+  assumeLocalEdit, assumePreTactic,
+  solveLocalEdit, solvePreTactic,
+  conversionLocalEdit, conversionPreTactic,
+  unfoldConstantPreTactic, betaReducePreTactic
 ) where
 
   import Prelude hiding (fail)
 
   import Data.Label
+  import qualified Data.List as L
+
+  import Debug.Trace
 
   import Mosquito.Kernel.Term
+
+  import Mosquito.ProofState.Conversionals
 
   import Mosquito.Utility.Pretty
 
   -- * Tactic types and representation
 
   type Justification    = [Theorem] -> Inference Theorem
-  type LocalEdit        = [Theorem] -> Term -> Inference (Justification, [([Theorem], Term)])
+  type LocalEdit        = [Term] -> Term -> Inference (Justification, [([Term], Term)])
   type TermLocalEdit    = Term -> LocalEdit
   type TheoremLocalEdit = Theorem -> LocalEdit
 
@@ -178,6 +187,37 @@ module Mosquito.ProofState.PreTactics (
     , _localEdit     = equalityModusPonensLocalEdit guess
     }
 
+  deductAntiSymmetricLocalEdit :: LocalEdit
+  deductAntiSymmetricLocalEdit assms concl = do
+    userMark ["deductAntiSymmetricPreTactic:", pretty concl]
+    (left, right) <- fromEquality concl
+    return (\[t, t'] -> deductAntiSymmetric t t', [(left:assms, right), (right:assms, left)])
+
+  deductAntiSymmetricPreTactic :: PreTactic
+  deductAntiSymmetricPreTactic =
+    PreTactic {
+      _preTacticName = "deductAntiSymmetricPreTactic"
+    , _localEdit     = deductAntiSymmetricLocalEdit
+    }
+
+  assumeLocalEdit :: LocalEdit
+  assumeLocalEdit assms concl = do
+    userMark ["assumeLocalEdit:", pretty concl]
+    if concl `L.elem` assms then
+      return (\[] -> assume concl, [])
+    else
+      fail . unwords $ [
+        unwords ["assumeLocalEdit: goal `", pretty concl, "' is not amongst the list of"]
+      , unwords ["assumption, `", pretty assms, "'."]
+      ]
+
+  assumePreTactic :: PreTactic
+  assumePreTactic =
+    PreTactic {
+      _preTacticName = "assumePreTactic"
+    , _localEdit     = assumeLocalEdit
+    }
+
   -- * Solving goals outright, and forward proof
 
   solveLocalEdit :: TheoremLocalEdit
@@ -197,3 +237,31 @@ module Mosquito.ProofState.PreTactics (
       _preTacticName = "solvePreTactic"
     , _localEdit     = solveLocalEdit thm
     }
+
+  conversionLocalEdit :: Conversion -> LocalEdit
+  conversionLocalEdit conv assms concl = do
+    conv'         <- conv concl
+    (left, right) <- fromEquality . conclusion $ conv'
+    if left == concl then do
+      symm <- symmetry conv'
+      return (\[t] -> equalityModusPonens symm t, [(assms, right)])
+    else if right == concl then do
+      return (\[t] -> equalityModusPonens conv' t, [(assms, left)])
+    else
+      fail . unwords $ [
+        "conversionLocalEdit: supplied conversion produced a bad equation"
+      , unwords ["`", pretty conv', "' when applied to goal `", pretty concl, "'."]
+      ]
+
+  conversionPreTactic :: Conversion -> PreTactic
+  conversionPreTactic conv =
+    PreTactic {
+      _preTacticName = "conversionPreTactic"
+    , _localEdit     = conversionLocalEdit conv
+    }
+
+  unfoldConstantPreTactic :: Theorem -> PreTactic
+  unfoldConstantPreTactic = conversionPreTactic . replaceAllConv . constConv
+
+  betaReducePreTactic :: PreTactic
+  betaReducePreTactic = conversionPreTactic $ replaceAllConv . tryConv $ beta
