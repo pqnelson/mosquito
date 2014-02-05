@@ -17,7 +17,11 @@ Mosquito supports both backward and forward proof.  Forward proof is supported
 directly via appeal to the implementation of the HOL inference rules in Term.hs.
 Backward proof is supported via an (experimental) implementation of tactics.  These,
 and the proof state that tactics act upon, can be found in src/Mosquito/ProofState.
-Examples of their use can be found in src/Mosquito/Theories/Boolean.hs.
+Examples of their use can be found in src/Mosquito/Theories/Boolean.hs.  A simple
+system of conversions (and conversionals) may be found in
+src/Mosquito/ProofState/Conversionals.hs with some more complex conversionals,
+including unfolding definitions and applying conversions at every point in a term,
+may also be found in that file.
 
 # License
 
