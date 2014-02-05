@@ -114,35 +114,35 @@ module Mosquito.Theories.Boolean {- (
   trueEqualityEliminationP :: PreTactic
   trueEqualityEliminationP = mkPreTactic "trueEqualityEliminationP" trueEqualityEliminationL
 
-{-
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
-  trueEqIThm :: Theorem -> Inference Theorem
-  trueEqIThm theorem = do
-    let p =  conclusion theorem
-    assmP <- assume p  -- p ⊢ p
-    trueI <- trueIThm     -- {} ⊢ true
-    das1  <- deductAntiSymmetric assmP trueI -- p ⊢ p = true
+  trueEqualityIntroductionT :: Theorem -> Inference Theorem
+  trueEqualityIntroductionT thm = do
+    let p =  conclusion thm
+    assmP <- assumeR p  -- p ⊢ p
+    trueI <- trueIntroductionT     -- {} ⊢ true
+    das1  <- deductAntiSymmetricR assmP trueI -- p ⊢ p = true
     let c =  conclusion das1
-    assmC <- assume c -- p = true ⊢ p = true
-    eqE   <- trueEqEThm assmC -- p = true ⊢ p
-    das2  <- deductAntiSymmetric das1 eqE -- ⊢ p = (p = true)
-    symm  <- symmetry das2
-    equalityModusPonens symm theorem
+    assmC <- assumeR c -- p = true ⊢ p = true
+    eqE   <- trueEqualityEliminationT assmC -- p = true ⊢ p
+    das2  <- deductAntiSymmetricR das1 eqE -- ⊢ p = (p = true)
+    symm  <- symmetryR das2
+    equalityModusPonensR symm thm
 
-  trueEqILocalEdit :: LocalEdit
-  trueEqILocalEdit assms concl = do
-    userMark ["trueEqILocalEdit:", pretty concl]
+  trueEqualityIntroductionL :: LocalEdit
+  trueEqualityIntroductionL assms concl = do
+    userMark ["trueEqualityIntroductionL:", pretty concl]
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
-      return $ (\[t] -> trueEqIThm t, [(assms, left)])
+      return $ (\[t] -> trueEqualityIntroductionT t, [(assms, left)])
     else
       fail "`trueEqILocalEdit'"
 
-  trueEqIPreTactic :: PreTactic
-  trueEqIPreTactic = mkPreTactic "trueEqIPreTactic" trueEqILocalEdit
+  trueEqualityIntroductionP :: PreTactic
+  trueEqualityIntroductionP = mkPreTactic "trueEqualityIntroductionP" trueEqualityIntroductionL
 
+{-
   --
   -- ** Universal quantification
   --

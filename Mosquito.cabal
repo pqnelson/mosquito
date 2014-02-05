@@ -13,8 +13,8 @@ name:                Mosquito
 version:             0.1.0.0
 
 -- A short (one-line) description of the package.
-synopsis:            Proof assistant for classical extensional
-                     higher order logic.
+synopsis:            A stateless LCF-style implementation of higher-order logic
+                     in Haskell.
 
 -- A longer description of the package.
 -- description:         
