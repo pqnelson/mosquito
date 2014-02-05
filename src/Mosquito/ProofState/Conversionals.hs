@@ -1,3 +1,5 @@
+{-# LANGUAGE DoAndIfThenElse #-}
+
 module Mosquito.ProofState.Conversionals where
 
   import Prelude hiding (fail)

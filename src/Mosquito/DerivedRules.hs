@@ -48,3 +48,11 @@ module Mosquito.DerivedRules (
     foldr (\(name, ty) prev -> do
       nPrev <- prev
       abstract name ty nPrev) (return thm) xs
+
+  proveHypothesis :: Theorem -> Theorem -> Inference Theorem
+  proveHypothesis left right =
+    if conclusion left `elem` hypotheses right then do
+      das <- deductAntiSymmetric left right
+      equalityModusPonens das left
+    else
+      return right

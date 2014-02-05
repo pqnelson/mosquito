@@ -142,9 +142,20 @@ where
         Fail trace' err -> Fail (trace ++ trace') err
         Success trace' t -> Success (trace ++ trace') t
 
+  -- |Records the invocation of an inference rule in the kernel.  Not exported,
+  --  and may only be used in this file.  When a later call in the @Inference@
+  --  monad fails, the debug information provided as an argument is printed
+  --  to the screen in a diagnostic message.  By convention, the first element
+  --  in the supplied argument list is the name of the inference rule being
+  --  invoked.
   kernelMark :: [String] -> Inference ()
   kernelMark s = Success [(FromKernel, L.intercalate "\t\t\t" s)] ()
 
+  -- |Records the invocation of an inference rule outside the kernel.  When a
+  --  later call in the @Inference@ monad fails, the debug information provided
+  --  as an argument is printed to the screen in a diagnostic message.  By
+  --  convention, the first element in the supplied argument list is the name of
+  --  the inference rule being invoked.
   userMark :: [String] -> Inference ()
   userMark s = Success [(OutwithKernel, L.intercalate "\t\t\t" s)] ()
 
@@ -401,10 +412,14 @@ where
   isPrimitiveConstantDescription PrimitiveConstant{} = True
   isPrimitiveConstantDescription _                   = False
 
+  -- |Tests whether a ConstantDescription is a type abstraction constant, used in the
+  --  declaration of a new type.
   isTypeAbstractionConstantDescription :: ConstantDescription -> Bool
   isTypeAbstractionConstantDescription TypeAbstractionConstant{} = True
   isTypeAbstractionConstantDescription _                         = False
 
+  -- |Tests whether a ConstantDescription is a type representation constant, used in the
+  --  declaration of a new type.
   isTypeRepresentationConstantDescription :: ConstantDescription -> Bool
   isTypeRepresentationConstantDescription TypeRepresentationConstant{} = True
   isTypeRepresentationConstantDescription _                            = False
@@ -599,6 +614,7 @@ where
   -- * Type checking.
   --
 
+  -- |Computes the type of a term.
   typeOf :: Term -> Inference Type
   typeOf (Var _ ty) = return ty
   typeOf (Const d)  = return . constantDescriptionType $ d
@@ -623,6 +639,7 @@ where
   -- * Substitutions and utility functions
   --
 
+  -- |Generic substitutions (i.e. finite mappings from Strings to some other type).
   newtype Substitution a
     = Substitution [(String, a)]
 
@@ -633,21 +650,30 @@ where
         body :: String
         body = L.intercalate ", " $ map (\(d, r) -> d ++ " := " ++ pretty r) ss
 
+  -- |Makes a substitution from an association list.
   mkSubstitution :: [(String, a)] -> Substitution a
   mkSubstitution = Substitution
 
+  -- |The empty substitution.
   empty :: Substitution a
   empty = Substitution []
 
+  -- |Composes two substitutions.
   compose :: Substitution a -> Substitution a -> Substitution a
   compose (Substitution left) (Substitution right) = Substitution $ left ++ right
 
+  -- |Computes the domain of a substitution.  Note this function over estimates,
+  --  for example dom ([a := a]) = a despite [a := a] being extensionally equal
+  --  to the identity substitution.
   domain :: Ord a => Substitution a -> S.Set String
   domain (Substitution ss) = S.fromList . map fst $ ss
 
+  -- |Computes the range of a substitution.
   range :: Ord a => Substitution a -> S.Set a
   range (Substitution ss) = S.fromList . map snd $ ss
 
+  -- |Applies a substitution to a string.  Third parameter is a default value to
+  --  return if the input string is not in the domain of the substitution.
   applySubst :: Substitution a -> String -> a -> a
   applySubst (Substitution []) dom def = def
   applySubst (Substitution ((dom, rng):xs)) dom' def
@@ -676,6 +702,8 @@ where
   termTypeSubst subst (Lam a ty body) =
     Lam a (typeSubst subst ty) $ termTypeSubst subst body
 
+  -- |Generates a fresh name.  Argument contains a list of pre-existing names
+  --  to avoid.
   fresh :: S.Set String -> String
   fresh = go "f" 0
     where

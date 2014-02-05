@@ -37,6 +37,8 @@ module Mosquito.Theories.Boolean {- (
 
   import Prelude hiding (fail, repeat)
 
+  import Mosquito.DerivedRules
+
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
 
@@ -169,6 +171,13 @@ module Mosquito.Theories.Boolean {- (
     let lam  =  mkLam name ty body
     mkApp inst lam
 
+  mkForalls :: [(String, Type)] -> Term -> Inference Term
+  mkForalls []           t = return t
+  mkForalls ((n, ty):xs) t = do
+    tail <- mkForalls xs t
+    head <- mkForall n ty tail
+    return head
+
   fromForall :: Term -> Inference (String, Type, Term)
   fromForall term = do
     (forallC, body) <- fromApp term
@@ -235,7 +244,7 @@ module Mosquito.Theories.Boolean {- (
   conjunctionIThm left right = do
     conjunctionD <- conjunctionD
     conj         <- mkConjunction (conclusion left) (conclusion right)
-    prf          <- mkConjecture "conjunctionI" conj
+    prf          <- mkConjectureRule "conjunctionI" (hypotheses left ++ hypotheses right) conj
     prf          <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
     prf          <- act prf . Apply $ betaReducePreTactic
     prf          <- act prf . Apply $ alphaPreTactic
@@ -248,6 +257,7 @@ module Mosquito.Theories.Boolean {- (
 
   conjunctionIPreTactic :: PreTactic
   conjunctionIPreTactic = mkPreTactic "conjunctionIPreTactic" conjunctionILocalEdit
+
 
   --
   -- ** Implication
@@ -455,6 +465,29 @@ module Mosquito.Theories.Boolean {- (
     prf   <- act prf . Apply $ alphaPreTactic
     qed prf
 
+  -- trueEqIffThm :: Inference Theorem
+{-
+  trueEqIffThm = Mosquito.Utility.Pretty.putStrLn $ do
+    trueC <- trueC
+    forallD <- forallD
+    let t =  mkVar "t" boolType
+    let u =  mkVar "u" boolType
+    tu    <- mkEquality t u
+    tut   <- mkEquality tu trueC
+    body  <- mkEquality tu tut
+    conj  <- mkForalls [("t", boolType), ("u", boolType)] body
+    prf   <- mkConjecture "trueEqIffThm" conj
+    prf   <- act prf . Apply $ unfoldConstantPreTactic forallD
+    prf   <- act prf . Apply $ betaReducePreTactic
+    prf   <- act prf . repeatN 2 $ Apply abstractPreTactic >=> Apply trueEqIPreTactic
+    prf   <- act prf . Apply $ deductAntiSymmetricPreTactic
+    prf   <- act prf . Try $ Apply trueEqIPreTactic >=> Apply assumePreTactic
+    prf   <- act prf . Apply $ trueEqEPreTactic
+    prf <- act prf . Apply $ assumePreTactic
+    qed prf
+-}
+
+
   -- tImpliesTThm :: Inference Theorem
   tImpliesTThm = Mosquito.Utility.Pretty.putStrLn $ do
     forallD      <- forallD
@@ -485,6 +518,7 @@ module Mosquito.Theories.Boolean {- (
     mkApps $ head:xs
   mkApps _ = fail "makeApps"
 
+{-
   -- symmetryThm :: Inference Theorem
   symmetryThm = Mosquito.Utility.Pretty.putStrLn $ do
     forallD <- forallD
@@ -529,3 +563,4 @@ module Mosquito.Theories.Boolean {- (
     --prf    <- act prf . Try $ Apply symmetryPreTactic >=> Apply assumePreTactic
     --prf    <- act prf . Apply $ trueEqEPreTactic
     return prf
+-}

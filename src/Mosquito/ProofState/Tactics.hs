@@ -16,13 +16,14 @@ module Mosquito.ProofState.Tactics (
   import Mosquito.ProofState.PreTactics
 
   data Tactic where
-    Apply      :: PreTactic -> Tactic
-    FollowedBy :: Tactic    -> Tactic -> Tactic
-    Id         :: Tactic
-    FailWith   :: String    -> Tactic
-    Try        :: Tactic    -> Tactic
-    Choice     :: Tactic    -> Tactic -> Tactic
-    Repeat     :: Tactic    -> Tactic
+    Apply       :: PreTactic -> Tactic
+    FollowedBy  :: Tactic    -> Tactic -> Tactic
+    Id          :: Tactic
+    FailWith    :: String    -> Tactic
+    Try         :: Tactic    -> Tactic
+    Choice      :: Tactic    -> Tactic -> Tactic
+    Repeat      :: Tactic    -> Tactic
+    SelectGoalI :: Int       -> Tactic
 
   type TheoremTactic = Theorem -> Tactic
   type TermTactic    = Term    -> Tactic

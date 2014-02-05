@@ -8,7 +8,7 @@ module Mosquito.ProofState.ProofState (
   Selection(..),
   IncompleteDerivation,
   ProofState,
-  mkConjecture, qed,
+  mkConjecture, mkConjectureRule, qed,
   act
 ) where
 
@@ -53,6 +53,20 @@ module Mosquito.ProofState.ProofState (
         _conjectureName = name
       , _conjecture     = conjecture
       , _derivation     = Hole Selected [] conjecture
+      }
+    else
+      fail . unwords $ [
+        "mkConjecture: cannot conjecture a non-propositional term: `", pretty conjecture, "'."
+      ]
+
+  mkConjectureRule:: String -> [Term] -> Term -> Inference ProofState
+  mkConjectureRule name hyps conjecture = do
+    conjectureType <- typeOf conjecture
+    if isProposition conjectureType then
+      return $ ProofState {
+        _conjectureName = name
+      , _conjecture     = conjecture
+      , _derivation     = Hole Selected hyps conjecture
       }
     else
       fail . unwords $ [

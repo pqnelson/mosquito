@@ -16,7 +16,7 @@
 \usepackage{tgpagella}
 \usepackage{xspace}
 
-\author{Dominic P. Mulligan\thanks{Many thanks to Anthony Fox, Ohad Kammar, Peter Sewell and Thomas Tuerk for useful comments and discussions on this work.}}
+\author{Dominic P. Mulligan\thanks{We wish to thank Anthony Fox, Ohad Kammar, Peter Sewell and Thomas Tuerk for many useful comments and discussions about this work.}}
 \title{Mosquito: an implementation of higher-order logic}
 \subtitle{(Rough diamond)}
 \titlerunning{Mosquito}
@@ -77,40 +77,39 @@ We discuss details of the logic implemented, kernel design and novel proof state
 \end{abstract}
 
 \mosquito is an experimental \textsc{lcf}-style implementation of higher-order logic (\textsc{hol}) using Haskell as its metalanguage.
-The system is under active development and has been written in a manner that eschews implicit state, exceptions and most uses of partiality.
-
-With \mosquito we intend to augment the Haskell ecosystem with an implementation of `vanilla' \textsc{hol}.
-The Haskell Community has a large pool of active developers and libraries, high-quality development tools and is aggresive in implementing experimental type-system features in the Glasgow Haskell Compiler (\textsc{ghc}).
-We aim to leverage this in our implementation, whilst leaving open the possibility of establishing interoperability with existing \textsc{hol} implementations via OpenTheory.
-
+The system is under active development.
 Some simple proofs, both forward and backward, have been performed in the system and various theories are currently under construction.
-\mosquito's source code may be obtained anonymously from a public Mercurial respository and is developed with \textsc{ghc}~7.6.2.\footnote{\url{https://bitbucket.org/MosquitoProofAssistant/mosquito}}
+\mosquito's source code may be obtained anonymously from a public Mercurial respository and is developed with Glasgow Haskell Compiler (\textsc{ghc})~7.6.2.\footnote{\url{https://bitbucket.org/MosquitoProofAssistant/mosquito}}
 
-Existing \textsc{lcf}-style implementations written in ML such as HOL4~\cite{gordon:introduction:1993}, HOL Light~\cite{harrison:hol:2009}, and Isabelle~\cite{wenzel:isabelle:2008} intrinsically rely on state within their kernels.
-When extending the logic with definition of a new constant, care must be taken to ensure that constants are not defined twice, lest, as pointed out by Wiedijk~\cite{wiedijk:stateless:2011}, we make our system inconsistent by defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$, then deducing $\vdash \mathtt{0 = 1}$ by transitivity and symmetry of equality.
-In the systems mentioned above this is managed by a stateful kernel wherein a mutable database of existing constant names is maintained and queried prior to admitting a new constant definition.
+The motivation behind \mosquito's development is threefold.
+First, we wish to experiment with the development of an \textsc{lcf}-style implementation of pure \textsc{hol} in idiomatic Haskell.
+Whilst Haskell shares many similarities with \textsc{ml}, the typical metalanguage of an \textsc{lcf}-style implementation, it also has many important differences, including: a non-strict evaluation semantics, the lack of \textsc{ml}-style modules, type classes, an institutionalised affinity for purity, widespread use of generic programming, metaprogramming via Template Haskell, type-level programming and other advanced type language features, a novel approach to concurrency via software transactional memory, etc.
+How these features may be leveraged in a \textsc{hol} implementation is an interesting question.
 
-Prevailing Haskell programming style attempts to avoid the use of imperative update and maintenance of implicit state, whenever possible.
-Rather, explicit state tends to be passed around, with a monadic style of programming adopted to assuage the pain of such explicit state passing.
-However, a na\"ive translation of an existing \textsc{lcf}-style kernel to Haskell using explicit state passing would be prone to inconsistencies without careful management of the many versions of the immutable state object floating around the system, as well as exposing a potentially cumbersome \textsc{api} to the programmer.
-%A na\"ive translation would also radically change the \textsc{api} of the kernel presented to the programmer, making it cumbersome to use in comparison to the kernels of existing systems.
+Second, we envision the possibility of writing Haskell executables that use \mosquito as a subcomponent for reasoning in \textsc{hol}.
+We see a host of possible applications from novel educational software, to programming language semantics animation tools, to writing high-assurance Haskell monitoring software that uses \mosquito to check security or cryptographic properties internally, and so on.
+Put into context, we see \mosquito eventually being more alike HOL4~\cite{gordon:introduction:1993} or HOL Light~\cite{harrison:hol:2009}---as an embeddable reasoning subcomponent, or a proof assistant as a \emph{service}---rather than Isabelle~\cite{wenzel:isabelle:2008} or Matita~\cite{asperti:matita:2011}, dedicated standalone formal development systems.
 
-As Wiedijk noted, there is a simple method for writing a stateless \textsc{hol} kernel, empirically only entailing a moderate slow down in the system when compared to those implemented using implicit state, whilst retaining the elegance of the original stateful design.
-Constants can be represented as a compound type consisting of their name as well as their definition, rather than simply their name as in e.g. HOL Light.
-A constant $\mathtt{C}$ is now only equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition.
-Defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ is now `safe'---at least from a point of view concerned purely with consistency of the logic---as a deduction of $\vdash \mathtt{0 = 1}$ is no longer possible.
+Third, we see \mosquito as a prototype implementation of a \textsc{hol} written with the express purpose of being relatively straightforward to formalise in another proof assistant.
+\mosquito is written in a stateless, pure and largely total style---folklore bywords for `easy to formalise'.
+We have expressly disavowed the use of exceptions to signal failure in favour of error monads.
+Further, we have adopted a Wiedijk-style stateless kernel~\cite{wiedijk:stateless:2011} in \mosquito to avoid the use of mutable references (or $\mathtt{IORef}$s in Haskell parlance), and the associated problem of the $\mathtt{IO}$ monad proliferating within the types of functions exported by the kernel.
+
+Under Wiedijk's scheme, a constant $\mathtt{C}$ is equal to a constant $\mathtt{C'}$ if they share the same name \emph{and} definition, in contrast with other systems such as HOL Light, where an imperative database of existing constant names is maintained in the kernel, preventing a user from redefining a previously defined constant, lest $\mathtt{C}$ be defined to be both $\mathtt{0}$ and $\mathtt{1}$ thus permitting a deduction of $\vdash \mathtt{0 = 1}$.
+In HOL Light and similar systems, constants need only be tested for equality based on their names, as we may safely rely on constants with differing definitions having different names.
+In \mosquito, defining a constant $\mathtt{C}$ to be both $\mathtt{0}$ and $\mathtt{1}$ is considered `safe'---at least from a point of view concerned purely with consistency of the logic---as a deduction of $\vdash \mathtt{0 = 1}$ is not possible.
 A similar scheme is used to tag type formers, and the associated \emph{abstraction} and \emph{representation} constants, for new types with their defining theorems.
-We adopt this method in the design of \mosquito.
 
-\paragraph{Why develop another proof assistant?  Why choose \textsc{hol}?}
-With \mosquito we aim to fill a niche: an \textsc{lcf}-style implementation of \textsc{hol} using Haskell.
-The Haskell ecosystem currently includes Agda~\cite{bove:brief:2009} and Idris~\cite{brady:idris:2013}, two dependently typed languages.
-With the exception of Austin and Alexander's HaskHOL kernel~\cite{austin:stateless:2013}, which implements a richer logic, no other \textsc{lcf}-style implementation of \textsc{hol} in Haskell exists.
-Compared to ML, Haskell has a paucity of proof assistant implementations, especially given the relative sizes of the two communities.
+Lastly, a note on the choice of logic implemented in \mosquito.
+\textsc{hol} is a simple (described in a handful of inference rules), well understood and widely implemented logic, due to its proven ability in capturing a wide swathe of mathematics and computer science.
+By implementing \textsc{hol} in \mosquito we aim to be able to export and import proofs to and from other implementations via OpenTheory~\cite{hurd:opentheory:2011}.
+Further, by maintaining compatibility with other \textsc{hol} systems we may be able to reuse existing automated proof tools, allowing us to achieve a significant degree of automation within \mosquito, until automated proof tools and decision procedures can be written for the system itself, with relatively little outlay of effort~\cite{kumar:standalone:2012}.
 
-Further, \textsc{hol} is a simple (described in a handful of inference rules), well understood and widely implemented logic, due to its proven ability in capturing a wide swathe of mathematics and computer science.
-By implementing \textsc{hol} in \mosquito we aim to be able to import and export existing proofs from other implementations via OpenTheory~\cite{hurd:opentheory:2011}.
-Similarly, automated proof tools implemented and tested in other systems could also be used in \mosquito~\cite{kumar:standalone:2012}, allowing us to `piggyback' on work done by others before us.
+Many \textsc{hol}-like systems currently exist, though two stand out as being particularly related.
+Wiedijk's Stateless HOL~\cite{wiedijk:stateless:2011} (progenitor of the stateless approach implemented in \mosquito) is a modification of the HOL Light system, wherein the stateful database of existing constant names has been moved outwith the kernel.
+Empirical testing suggests that Wiedijk's modifications to HOL Light entail only a moderate performance decrease when compared to vanilla HOL Light.
+Austin and Alexander's HaskHOL kernel~\cite{austin:stateless:2013} is a stateless kernel for an extension of \textsc{hol} with System-F style type quantification and explicit polymorphism.
+HaskHOL is also implemented in Haskell.
 
 \begin{figure}[t]
 \begin{gather*}
@@ -198,7 +197,7 @@ Similarly, automated proof tools implemented and tested in other systems could a
 \using\rulefont{tyinst}
 \end{prooftree}
 \end{gather*}
-\caption{Inference rules for \mosquito's logic}
+%\caption{Inference rules for \mosquito's logic}
 \label{fig.rules}
 \end{figure}
 
@@ -209,11 +208,11 @@ Similarly, automated proof tools implemented and tested in other systems could a
 \mosquito implements a similar higher-order logic to the HOL Light system.
 Terms $t$, $u$, and so on, are terms of the simply-typed $\lambda$-calculus extended with constants.
 The full derivation rules for the core logic are presented in Figure~\ref{fig.rules}.
-Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ is the set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution instantiating types in terms, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is its pointwise extension to a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$).
+Here, $\Gamma$ and $\Delta$ range over arbitrary contexts, $\{\}$ is the empty context, $fv(t)$ is the set of free variables of a term, $t[\vec{\alpha}/\vec{\phi}]$ is a parallel substitution instantiating types in terms, and $\Gamma[\vec{\alpha}/\vec{\phi}]$ is its pointwise extension to a context (similarly for parallel capture-avoiding substitutions $t[\vec{b}/\vec{u}]$ and $\Gamma[\vec{b}/\vec{u}]$).
 
-\mosquito follows the well-worn \textsc{lcf} design philosophy.
+\mosquito follows the \textsc{lcf} design philosophy.
 The kernel exposes several abstract types: $\mathtt{Term}$, $\mathtt{Type}$ and $\mathtt{Theorem}$.
-Modulo bugs in the design of Haskell or the GHC implementation the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
+Modulo bugs in the design of Haskell or the \textsc{ghc} implementation the only way to construct a non-bottom inhabitant of $\mathtt{Theorem}$ is via appeal to the implementation of the rules in Figure~\ref{fig.rules}.
 
 The kernel exports two primitive \emph{type formers}: $\mathtt{Bool}$, the Booleans, and $- \Rightarrow -$, the function space arrow.
 Each type former is equipped with an \emph{arity}, a natural number detailing the number of types one must supply to the former to construct a new type.
@@ -234,7 +233,7 @@ Similarly, a weakened form of \rulefont{beta} is implemented in the HOL Light ke
 The strengthened versions of $\eta$- and $\beta$-equality are then supplied later, as derived rules.
 We choose to implement the full versions of these rules directly in \mosquito's kernel.
 
-\mosquito's core higher-order logic may be extended in three ways.
+\mosquito's logic may be extended in three ways.
 A new constant may be defined as equal to an existing term, modulo restrictions on the free (type-)variables of that term.
 A new inhabited type may be defined in provable bijection with a subset of an existing type.
 Lastly, a formula may be asserted freeform as an axiom.
@@ -269,14 +268,14 @@ Backwards proof is progressed via a tactic application using the $\mathtt{act}$ 
 Intuitively, tactics are applied to every selected goal at once, where zero or many goals may be selected at any one time.
 A tactic applied via $\mathtt{act}$ must succeed on \emph{every} selected goal for $\mathtt{act}$ itself to succeed.
 If a tactic succeeds at a goal it is transformed into a branch in the derivation tree with new selected holes as children, corresponding to the subgoals generated by the tactic.
-This style of tactic application is similar in spirit to a style employed in Matita~\cite{asperti:matita:2011} and has the advantage of permitting the sharing of chunks of tactic driven proof across multiple goals.
+This style of tactic application is similar to a style adopted in Matita~\cite{asperti:matita:2011}, with the advantage of permitting sharing of proof chunks across multiple goals.
 
 In systems such as HOL Light, tactics are pieced together via tactic-valued functionals called tacticals.
 In contrast, we embed the abstract syntax tree of a \emph{proof description language} explicitly as an algebraic data type:
 \begin{lstlisting}
-data Tactic
-  = Apply PreTactic | ($\rightarrowtail$) Tactic Tactic | Id | FailWith String
-  | Try Tactic | ($\oplus$) Tactic Tactic | Repeat Tactic
+data Tactic =
+  Apply PreTactic | ($\rightarrowtail$) Tactic Tactic | Id | FailWith String |
+  Try Tactic | ($\oplus$) Tactic Tactic | Repeat Tactic | SelectGoalsI [Int]
 \end{lstlisting}
 
 The semantics of proof descriptions is given by the $\mathtt{act}$ function.
@@ -294,17 +293,19 @@ A call to $\mathtt{act\ p\ (Repeat\ t)}$ tries to applies $\mathtt{t}$ at each s
 The tactic $\mathtt{t}$ must apply at least once, with the last proof state successfully modified by $\mathtt{t}$ returned.
 \item
 A call to $\mathtt{act\ p\ (t \rightarrowtail t')}$ first applies $\mathtt{t}$ to each selected goal.
-If this does not fail, then $\mathtt{t'}$ is applied to each selected goal, otherwise the call results in failure.
+If this does not fail, then $\mathtt{t'}$ is applied to each selected goal, otherwise the call fails.
 \item
 A call to $\mathtt{act\ p\ (t \oplus t')}$ tries to apply $\mathtt{t}$ to each selected goal.
 If this fails, then $\mathtt{t'}$ is applied to each selected goal instead.
+\item
+A call to $\mathtt{act\ p\ (SelectGoalsI\ is)}$ marks a goal with identification number $\mathtt{i}$ as being selected if $\mathtt{i \in is}$, otherwise marks the goal as unselected.
 \end{itemize*}
 $\mathtt{Apply}$ lifts a \emph{pretactic} into a tactic.
 Intuitively, a pretactic is a function that edits a selected hole in the derivation tree.
 A pretactic is supplied with the assumptions and goal to prove at that hole, and may either choose to fail with an error at that hole or succeed, returning a list of new subgoals which are spliced into the derivation tree as new holes.
 Pretactics have an entirely `local' view of the derivation tree---they see only information present at a hole, and are not supplied with information about the rest of the tree.
 
-We discuss the operation of $\mathtt{alphaPreTactic}$ as an example, which closes subgoals $A_1 \ldots A_n \vdash_? t = u$ where $t$ and $u$ are $\alpha$-equivalent.
+We discuss $\mathtt{alphaPreTactic}$ as an example, which closes subgoals $A_1 \ldots A_n \vdash_? t = u$ where $t$ and $u$ are $\alpha$-equivalent.
 The pretactic receives the assumptions $A_1 \ldots A_n$ and the goal to prove $t = u$ at a given hole.
 It ensures the goal is an equality, and the equated terms $t$, $u$ are $\alpha$-equivalent.
 If so, the pretactic generates an empty list of new subgoals, coupled with a justification function that makes use of the implementation of \rulefont{alpha} from Figure~\ref{fig.rules} to `reverse' its operation.
@@ -336,14 +337,15 @@ If this succeeds, it successfully returns the new proof state paired with $\math
 \textbf{Conclusions}
 \newline
 
-\mosquito is an Wiedijk-style stateless implementation of \textsc{hol} written in Haskell.
-Some backward and forward proofs of simple conjectures have been carried out in the system.
+\mosquito is a stateless implementation of \textsc{hol} written in Haskell.
+Some backward and forward proofs of simple conjectures have been carried out in the system using \mosquito's tactic and proof state \textsc{api}.
+With \mosquito we aim to provide an embeddable library for reasoning in \textsc{hol} within Haskell applications.
+We also aim to use \mosquito to experiment with Haskell's novel language and type system features within the context of a proof assistant, and to provide a \textsc{hol} written with the express intention of being easy to verify correct.
+We leave this verification as potential future work.
 
-Several lines for further work remain.
-How efficient \mosquito is at certifying large proofs remains unresolved, though this could be tested by importing existing proofs developed in other systems via OpenTheory.
-\mosquito tactics are data that describes transformations of a proof state.
-They may be inspected, modified and created like any other data.
-How this representation limits or expands the set of tactics that can be written is an open question, and requires further work to answer.
+Many other avenues of further work also remain, not least the further development of \mosquito.
+How quickly \mosquito can check large proofs is an open question, and could be resolved by importing existing proofs written in e.g. HOL Light into the system via OpenTheory.
+Lastly, how \mosquito's embedding of tactics as a proof description language affects the set of tactics that may be written in the system, for good or for bad, remains to be seen and requires further experimentation.
 
 \bibliography{mulligan-mosquito-2013}
 

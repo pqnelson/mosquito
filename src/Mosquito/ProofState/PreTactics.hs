@@ -14,7 +14,6 @@ module Mosquito.ProofState.PreTactics (
   abstractLocalEdit, abstractPreTactic,
   combineLocalEdit, combinePreTactic,
   equalityModusPonensLocalEdit, equalityModusPonensPreTactic,
-  deductAntiSymmetricLocalEdit, deductAntiSymmetricPreTactic,
   assumeLocalEdit, assumePreTactic,
   solveLocalEdit, solvePreTactic,
   conversionLocalEdit, conversionPreTactic,
@@ -187,19 +186,6 @@ module Mosquito.ProofState.PreTactics (
     , _localEdit     = equalityModusPonensLocalEdit guess
     }
 
-  deductAntiSymmetricLocalEdit :: LocalEdit
-  deductAntiSymmetricLocalEdit assms concl = do
-    userMark ["deductAntiSymmetricPreTactic:", pretty concl]
-    (left, right) <- fromEquality concl
-    return (\[t, t'] -> deductAntiSymmetric t t', [(left:assms, right), (right:assms, left)])
-
-  deductAntiSymmetricPreTactic :: PreTactic
-  deductAntiSymmetricPreTactic =
-    PreTactic {
-      _preTacticName = "deductAntiSymmetricPreTactic"
-    , _localEdit     = deductAntiSymmetricLocalEdit
-    }
-
   assumeLocalEdit :: LocalEdit
   assumeLocalEdit assms concl = do
     userMark ["assumeLocalEdit:", pretty concl]
@@ -264,4 +250,4 @@ module Mosquito.ProofState.PreTactics (
   unfoldConstantPreTactic = conversionPreTactic . replaceAllConv . constConv
 
   betaReducePreTactic :: PreTactic
-  betaReducePreTactic = conversionPreTactic $ replaceAllConv . tryConv $ beta
+  betaReducePreTactic = conversionPreTactic . replaceAllConv . tryConv $ beta
