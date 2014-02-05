@@ -1,6 +1,23 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 
-module Mosquito.ProofState.Conversionals where
+-- |Conversions, possibly failing mappings from terms @t@ to theorems @|- t = u@
+--  and conversionals, higher-order functions over conversions.  Conversions
+--  and conversionals can be used to implement a simple form of rewriting.
+module Mosquito.ProofState.Conversionals (
+  -- * The conversion type, and simple conversions
+  Conversion,
+  failConv, successConv,
+  -- * Conversionals
+  thenConv, repeatConv, elseConv, tryConv,
+  -- * Syntax specific conversionals
+  combineConv, combineLConv, combineRConv,
+  abstractConv,
+  -- * More refined conversionals
+  unfoldConstantConv,
+  replaceEverywhereConv,
+  Path(..)
+)
+where
 
   import Prelude hiding (fail)
 
@@ -13,64 +30,92 @@ module Mosquito.ProofState.Conversionals where
 
   import Mosquito.Utility.Pretty
 
+  --
+  -- * Simple conversions
+  --
+
+  -- |The conversion type, a function that maps terms @t@ to theorems @⊢ t = u@.
+  --  This mapping may possibly fail.
   type Conversion = Term -> Inference Theorem
 
+  -- |The conversion that always fails.
   failConv :: Conversion
   failConv term =
     fail . unwords $ [
       "failConv: conversion always fails, supplied term `", pretty term, "'."
     ]
 
+  -- |The conversion that always succeeds (reflexivity).
   successConv :: Conversion
-  successConv term = alpha term term
+  successConv term = alphaR term term
 
+  --
+  -- * Conversionals (conversion valued functionals)
+  --
+
+  -- |The sequencing conversional.
   thenConv :: Conversion -> Conversion -> Conversion
   thenConv left right term = do
     thm    <- left term
     (l, r) <- fromEquality . conclusion $ thm
     thm'   <- right r
-    transitivity thm thm'
+    transitivityR thm thm'
 
+  -- |The choice conversional.  If the first conversion fails to apply
+  --  then the second conversion is applied.
   elseConv :: Conversion -> Conversion -> Conversion
   elseConv left right term =
     inference (left term)
-      (const $ right term)
+      (const . right $ term)
       return
 
+  -- |Exception handling conversional.  If the first conversion fails to apply,
+  --  then the conversion that always succeeds is applied.
   tryConv :: Conversion -> Conversion
   tryConv conv =
     conv `elseConv` successConv
 
+  -- |Repetition of conversion application.
   repeatConv :: Conversion -> Conversion
   repeatConv conv = (conv `thenConv` repeatConv conv) `elseConv` successConv
 
+  --
+  -- * Syntax specific conversions
+  --
+
+  -- |Apply a conversion to the left hand side of a combination, and
+  --  another to the right hand side.
   combineConv :: Conversion -> Conversion -> Conversion
   combineConv leftC rightC term = do
     (left, right) <- fromApp term
     cL            <- leftC left
     cR            <- rightC right
-    combine cL cR
+    combineR cL cR
 
+  -- |Specialisation of combineConv which applies a conversion to the
+  --  left hand side of a combination, only.
   combineLConv :: Conversion -> Conversion
-  combineLConv conv term = do
-    (left, right) <- fromApp term
-    c             <- conv left
-    combineL right c
+  combineLConv conv = combineConv conv successConv
 
+  -- |Specialisation of combineConv which applies a conversion to the
+  --  right hand side of a combination, only.
   combineRConv :: Conversion -> Conversion
-  combineRConv conv term = do
-    (left, right) <- fromApp term
-    c             <- conv right
-    combineR left c
+  combineRConv conv = combineConv successConv conv
 
+  -- |Applies a conversion to the body of an abstraction, under the binder.
   abstractConv :: Conversion -> Conversion
   abstractConv conv term = do
     (name, ty, body) <- fromLam term
     c                <- conv body
-    abstract name ty c
+    abstractR name ty c
 
-  constConv :: Theorem -> Conversion
-  constConv thm term =
+  --
+  -- * More refined conversionals
+  --
+
+  -- |Unfolds a constant with the constant's defining theorem.
+  unfoldConstantConv :: Theorem -> Conversion
+  unfoldConstantConv thm term =
     if isConst term then do
       (left, right) <- fromEquality . conclusion $ thm
       if left == term then do
@@ -80,15 +125,16 @@ module Mosquito.ProofState.Conversionals where
         --      we need to completely freshen the type variables in the theorem
         --      before we unify against the constant, before instantiating
         unif <- unifyTypes typT typR
-        thm  <- typeInstantiation unif thm
+        thm  <- typeInstantiationR unif thm
         return thm
       else
         successConv term
     else
       successConv term
 
-  replaceAllConv :: Conversion -> Conversion
-  replaceAllConv conv = go
+  -- |Applies a conversion at every point in a term, rewriting at all positions.
+  replaceEverywhereConv :: Conversion -> Conversion
+  replaceEverywhereConv conv = go
     where
       go :: Conversion
       go term =
@@ -100,3 +146,15 @@ module Mosquito.ProofState.Conversionals where
           conv term
         else
           successConv term
+
+  -- |Paths for navigating through terms.
+  data Path
+    = GoLeft  -- ^Go left through an application.
+    | GoRight -- ^Go right through an application.
+    | GoUnder -- ^Go under a lambda abstraction.
+
+{-
+  pathConv :: [Path] -> Conversion -> Conversion
+  pathConv []          conv = return conv
+  pathConv (GoLeft:xs) conv =  
+-}

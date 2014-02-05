@@ -47,7 +47,6 @@ module Mosquito.Theories.Boolean {- (
   import Mosquito.ProofState.ProofState
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
-  import Mosquito.ProofState.Unfolding
 
   import Mosquito.Theories.Utility
 
@@ -59,62 +58,63 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- T = \a : Bool. a = \a : Bool. a
-  trueDecl :: Inference (Term, Theorem)
-  trueDecl = do
+  trueDeclaration :: Inference (Term, Theorem)
+  trueDeclaration = do
     let name =  mkQualifiedName ["Mosquito", "Bool"] "true"
     let t    =  mkLam "a" boolType $ mkVar "a" boolType
     eq       <- mkEquality t t
     primitiveNewDefinedConstant name eq boolType
 
   trueC :: Inference Term
-  trueC = constantOfDecl trueDecl
+  trueC = constantOfDecl trueDeclaration
 
   trueD :: Inference Theorem
-  trueD = theoremOfDecl trueDecl
+  trueD = theoremOfDecl trueDeclaration
 
   -- |Produces a derivation of @{} ⊢ true@.
-  trueIThm :: Inference Theorem
-  trueIThm = do
+  trueIntroductionT :: Inference Theorem
+  trueIntroductionT = do
     trueC <- trueC
     trueD <- trueD
-    conj  <- mkConjecture "trueI" trueC
-    conj  <- act conj $ Apply (unfoldConstantPreTactic trueD)
-    conj  <- act conj $ Apply alphaPreTactic
+    conj  <- mkConjecture "trueIntroduction" trueC
+    conj  <- act conj $ Apply (unfoldConstantP trueD)
+    conj  <- act conj $ Apply alphaP
     qed conj
 
-  trueILocalEdit :: LocalEdit
-  trueILocalEdit _ concl = do
-    userMark ["trueILocalEdit:", pretty concl]
+  trueIntroductionL :: LocalEdit
+  trueIntroductionL _ concl = do
+    userMark ["trueIntroductionL:", pretty concl]
     trueC <- trueC
     if concl == trueC then
-      return (\[] -> trueIThm, [])
+      return (\[] -> trueIntroductionT, [])
     else
       fail . unwords $ [
-        "Conclusion passed to `trueIPreTac' not `true'."
+        "trueIntroductionL: conclusion `", pretty concl, "' not `true'."
       ]
 
-  -- |Solves all goals of the form @true@.
-  trueIPreTactic :: PreTactic
-  trueIPreTactic = mkPreTactic "trueITactic" trueILocalEdit
+  -- |Solves goals of the form @true@.
+  trueIntroductionP :: PreTactic
+  trueIntroductionP = mkPreTactic "trueIntroductionP" trueIntroductionL
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
-  --  @Gamma ⊢ p = true@.
-  trueEqEThm :: Theorem -> Inference Theorem
-  trueEqEThm theorem = do
-    trueI <- trueIThm
-    symm  <- symmetry theorem
-    equalityModusPonens symm trueI
+  --  @Gamma |- p = true@.
+  trueEqualityEliminationT :: Theorem -> Inference Theorem
+  trueEqualityEliminationT thm = do
+    trueI <- trueIntroductionT
+    symm  <- symmetryR thm
+    equalityModusPonensR symm trueI
 
-  trueEqELocalEdit :: LocalEdit
-  trueEqELocalEdit assms concl = do
-    userMark ["trueEqELocalEdit:", pretty concl]
+  trueEqualityEliminationL :: LocalEdit
+  trueEqualityEliminationL assms concl = do
+    userMark ["trueEqualityEliminationL:", pretty concl]
     trueC <- trueC
     eq <- mkEquality concl trueC
-    return (\[t] -> trueEqEThm t, [(assms, eq)])
+    return (\[t] -> trueEqualityEliminationT t, [(assms, eq)])
 
-  trueEqEPreTactic :: PreTactic
-  trueEqEPreTactic = mkPreTactic "trueEqEPreTactic" trueEqELocalEdit
+  trueEqualityEliminationP :: PreTactic
+  trueEqualityEliminationP = mkPreTactic "trueEqualityEliminationP" trueEqualityEliminationL
 
+{-
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
   trueEqIThm :: Theorem -> Inference Theorem
@@ -563,4 +563,5 @@ module Mosquito.Theories.Boolean {- (
     --prf    <- act prf . Try $ Apply symmetryPreTactic >=> Apply assumePreTactic
     --prf    <- act prf . Apply $ trueEqEPreTactic
     return prf
+-}
 -}

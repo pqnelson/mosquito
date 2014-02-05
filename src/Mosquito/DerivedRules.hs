@@ -4,11 +4,11 @@
 --  rules defined in the kernel.
 module Mosquito.DerivedRules (
   -- * Reflexivity
-  reflexivity,
+  reflexivityR,
   -- * Restricted combination rules
-  combineL, combineR,
+  combineLeftR, combineRightR,
   -- * Lambda-abstraction
-  abstracts
+  abstractsR
 ) where
 
   import Prelude hiding (fail)
@@ -24,35 +24,35 @@ module Mosquito.DerivedRules (
   --
 
   -- |Produces a derivation of @Gamma ⊢ t = t@ given @t@.
-  reflexivity :: Term -> Inference Theorem
-  reflexivity t = alpha t t
+  reflexivityR :: Term -> Inference Theorem
+  reflexivityR t = alphaR t t
 
   -- |Produces a derivation of @Gamma ⊢ f x = f y@ from a derivation of
   --  @Gamma ⊢ x = y@ provided the supplied term @f@ is of the correct type.
-  combineR :: Term -> Theorem -> Inference Theorem
-  combineR t thm = do
-    eq <- reflexivity t
-    combine eq thm
+  combineRightR :: Term -> Theorem -> Inference Theorem
+  combineRightR t thm = do
+    eq <- reflexivityR t
+    combineR eq thm
 
   -- |Produces a derivation of @Gamma ⊢ f x = g x@ from a derivation of
   --  @Gamma ⊢ f = g@ provided the supplied term @x@ is of the correct type.
-  combineL :: Term -> Theorem -> Inference Theorem
-  combineL t thm = do
-    eq <- reflexivity t
-    combine thm eq
+  combineLeftR :: Term -> Theorem -> Inference Theorem
+  combineLeftR t thm = do
+    eq <- reflexivityR t
+    combineR thm eq
 
   -- |Generalised for of "abstract", performing many abstractions one after
   --  the other.
-  abstracts :: [(String, Type)] -> Theorem -> Inference Theorem
-  abstracts xs thm =
+  abstractsR :: [(String, Type)] -> Theorem -> Inference Theorem
+  abstractsR xs thm =
     foldr (\(name, ty) prev -> do
       nPrev <- prev
-      abstract name ty nPrev) (return thm) xs
+      abstractR name ty nPrev) (return thm) xs
 
-  proveHypothesis :: Theorem -> Theorem -> Inference Theorem
-  proveHypothesis left right =
+  proveHypothesisR :: Theorem -> Theorem -> Inference Theorem
+  proveHypothesisR left right =
     if conclusion left `elem` hypotheses right then do
-      das <- deductAntiSymmetric left right
-      equalityModusPonens das left
+      das <- deductAntiSymmetricR left right
+      equalityModusPonensR das left
     else
       return right

@@ -7,17 +7,17 @@ module Mosquito.ProofState.PreTactics (
   LocalEdit, TermLocalEdit, TheoremLocalEdit,
   PreTactic, TermPreTactic, TheoremPreTactic,
   preTacticName, localEdit, mkPreTactic,
-  alphaLocalEdit, alphaPreTactic,
-  symmetryLocalEdit, symmetryPreTactic,
-  betaReduce, betaLocalEdit, betaPreTactic,
-  etaLocalEdit, etaPreTactic,
-  abstractLocalEdit, abstractPreTactic,
-  combineLocalEdit, combinePreTactic,
-  equalityModusPonensLocalEdit, equalityModusPonensPreTactic,
-  assumeLocalEdit, assumePreTactic,
-  solveLocalEdit, solvePreTactic,
-  conversionLocalEdit, conversionPreTactic,
-  unfoldConstantPreTactic, betaReducePreTactic
+  alphaL, alphaP,
+  symmetryL, symmetryP,
+  abstractL, abstractP,
+  combineL, combineP,
+  betaL, betaP,
+  etaL, etaP,
+  equalityModusPonensL, equalityModusPonensP,
+  assumeL, assumeP,
+  solveL, solveP,
+  conversionL, conversionP,
+  unfoldConstantP, betaReduceP, etaReduceP
 ) where
 
   import Prelude hiding (fail)
@@ -60,90 +60,89 @@ module Mosquito.ProofState.PreTactics (
 
   -- * Basic tactics
 
-  alphaLocalEdit :: LocalEdit
-  alphaLocalEdit assms concl = do
-    userMark ["alphaLocalEdit:", pretty concl]
+  alphaL :: LocalEdit
+  alphaL assms concl = do
+    userMark ["alphaL:", pretty concl]
     (left, right) <- fromEquality concl
     if left == right then do
-      return $ (\[] -> alpha left right, [])
+      return $ (\[] -> alphaR left right, [])
     else
       fail . unwords $ [
-        "alphaLocalEdit: left and right side of equality not alpha-equivalent"
+        "alphaL: left and right side of equality not alpha-equivalent"
       , unwords ["when testing terms `", pretty left, "'' and `", pretty right, "'."]
       ]
 
-  alphaPreTactic :: PreTactic
-  alphaPreTactic =
+  alphaP :: PreTactic
+  alphaP =
     PreTactic {
-      _preTacticName = "alphaPreTactic"
-    , _localEdit     = alphaLocalEdit
+      _preTacticName = "alphaP"
+    , _localEdit     = alphaL
     }
 
-  symmetryLocalEdit :: LocalEdit
-  symmetryLocalEdit assms concl = do
-    userMark ["symmetryLocalEdit:", pretty concl]
+  symmetryL :: LocalEdit
+  symmetryL assms concl = do
+    userMark ["symmetryL:", pretty concl]
     (l, r) <- fromEquality concl
     nConcl <- mkEquality r l
-    return $ (\[t] -> symmetry t, [(assms, nConcl)])
+    return $ (\[t] -> symmetryR t, [(assms, nConcl)])
 
-  symmetryPreTactic :: PreTactic
-  symmetryPreTactic =
+  symmetryP :: PreTactic
+  symmetryP =
     PreTactic {
-      _preTacticName = "symmetryTactic"
-    , _localEdit     = symmetryLocalEdit
+      _preTacticName = "symmetryP"
+    , _localEdit     = symmetryL
     }
 
-  abstractLocalEdit :: LocalEdit
-  abstractLocalEdit assms concl = do
-    userMark ["abstractLocalEdit:", pretty concl]
+  abstractL :: LocalEdit
+  abstractL assms concl = do
+    userMark ["abstractL:", pretty concl]
     (l, r)             <- fromEquality concl
     (name,  ty, lBody) <- fromLam l
     (name', _,  rBody) <- fromLam r
     if name == name' then do
       nConcl <- mkEquality lBody rBody
-      return (\[t] -> abstract name ty t, [(assms, nConcl)])
+      return (\[t] -> abstractR name ty t, [(assms, nConcl)])
     else do
       let nBody =  permute name name' rBody
       nConcl    <- mkEquality lBody nBody
-      return (\[t] -> abstract name ty t, [(assms, nConcl)])
+      return (\[t] -> abstractR name ty t, [(assms, nConcl)])
 
-  abstractPreTactic :: PreTactic
-  abstractPreTactic =
+  abstractP :: PreTactic
+  abstractP =
     PreTactic {
-      _preTacticName = "abstractPreTactic"
-    , _localEdit     = abstractLocalEdit
+      _preTacticName = "abstractP"
+    , _localEdit     = abstractL
     }
 
-  combineLocalEdit :: LocalEdit
-  combineLocalEdit assms concl = do
-    userMark ["combineLocalEdit:", pretty concl]
+  combineL :: LocalEdit
+  combineL assms concl = do
+    userMark ["combineL:", pretty concl]
     (left, right)   <- fromEquality concl
     (leftL, rightL) <- fromApp left
     (leftR, rightR) <- fromApp right
     nLeft           <- mkEquality leftL leftR
     nRight          <- mkEquality rightL rightR
-    return (\[t, t'] -> combine t t', [(assms, nLeft), (assms, nRight)])
+    return (\[t, t'] -> combineR t t', [(assms, nLeft), (assms, nRight)])
 
-  combinePreTactic :: PreTactic
-  combinePreTactic =
+  combineP :: PreTactic
+  combineP =
     PreTactic {
-      _preTacticName = "combinePreTactic"
-    , _localEdit     = combineLocalEdit
+      _preTacticName = "combineP"
+    , _localEdit     = combineL
     }
 
-  etaLocalEdit :: LocalEdit
-  etaLocalEdit _ concl = do
-    userMark ["etaLocalEdit:", pretty concl]
+  etaL :: LocalEdit
+  etaL _ concl = do
+    userMark ["etaL:", pretty concl]
     (left, _) <- fromEquality concl
     --- XXX: test here
-    thm <- eta left
-    return $ (\[] -> return thm, [])
+    return $ (\[] -> etaR left, [])
 
-  etaPreTactic :: PreTactic
-  etaPreTactic =
+  etaP :: PreTactic
+  etaP =
     PreTactic {
-      _preTacticName = "etaPreTactic"
-    , _localEdit     = etaLocalEdit
+      _preTacticName = "etaP"
+    , _localEdit     = etaL
     }
 
   betaReduce :: Term -> Inference Term
@@ -153,101 +152,104 @@ module Mosquito.ProofState.PreTactics (
     let subst     =  mkSubstitution [(n, right)]
     return $ termSubst subst body
 
-  betaLocalEdit :: LocalEdit
-  betaLocalEdit _ concl = do
-    userMark ["betaLocalEdit:", pretty concl]
+  betaL :: LocalEdit
+  betaL _ concl = do
+    userMark ["betaL:", pretty concl]
     (left, right) <- fromEquality concl
     reduced       <- betaReduce left
-    if reduced == right then do
-      thm <- beta left
-      return $ (\[] -> return thm, [])
+    if reduced == right then
+      return $ (\[] -> betaR left, [])
     else
       fail . unwords $ [
-        "betaLocalEdit: beta reduced left hand side"
+        unwords ["betaL: beta reduced left hand side `", pretty reduced, "' is"]
+      , unwords ["not alpha-equivalent to right hand side `", pretty right, "'."]
       ]
 
-  betaPreTactic :: PreTactic
-  betaPreTactic =
+  betaP :: PreTactic
+  betaP =
     PreTactic {
-      _preTacticName = "betaPreTactic"
-    , _localEdit     = betaLocalEdit
+      _preTacticName = "betaP"
+    , _localEdit     = betaL
     }
 
-  equalityModusPonensLocalEdit :: TermLocalEdit
-  equalityModusPonensLocalEdit guess assms concl = do
-    userMark ["equalityModusPonensLocalEdit:", pretty guess, pretty concl]
+  equalityModusPonensL :: TermLocalEdit
+  equalityModusPonensL guess assms concl = do
+    userMark ["equalityModusPonensL:", pretty guess, pretty concl]
     eq <- mkEquality guess concl
-    return $ (\[t, t'] -> equalityModusPonens t t', [(assms, eq), (assms, guess)])
+    return $ (\[t, t'] -> equalityModusPonensR t t', [(assms, eq), (assms, guess)])
 
-  equalityModusPonensPreTactic :: TermPreTactic
-  equalityModusPonensPreTactic guess =
+  equalityModusPonensP :: TermPreTactic
+  equalityModusPonensP guess =
     PreTactic {
-      _preTacticName = "equalityModusPonensPreTactic"
-    , _localEdit     = equalityModusPonensLocalEdit guess
+      _preTacticName = "equalityModusPonensP"
+    , _localEdit     = equalityModusPonensL guess
     }
 
-  assumeLocalEdit :: LocalEdit
-  assumeLocalEdit assms concl = do
-    userMark ["assumeLocalEdit:", pretty concl]
+  assumeL :: LocalEdit
+  assumeL assms concl = do
+    userMark ["assumeL:", pretty concl]
     if concl `L.elem` assms then
-      return (\[] -> assume concl, [])
+      return (\[] -> assumeR concl, [])
     else
       fail . unwords $ [
-        unwords ["assumeLocalEdit: goal `", pretty concl, "' is not amongst the list of"]
+        unwords ["assumeL: goal `", pretty concl, "' is not amongst the list of"]
       , unwords ["assumption, `", pretty assms, "'."]
       ]
 
-  assumePreTactic :: PreTactic
-  assumePreTactic =
+  assumeP :: PreTactic
+  assumeP =
     PreTactic {
-      _preTacticName = "assumePreTactic"
-    , _localEdit     = assumeLocalEdit
+      _preTacticName = "assumeP"
+    , _localEdit     = assumeL
     }
 
   -- * Solving goals outright, and forward proof
 
-  solveLocalEdit :: TheoremLocalEdit
-  solveLocalEdit thm _ concl = do
-    userMark ["solveLocalEdit:", pretty thm, pretty concl]
+  solveL :: TheoremLocalEdit
+  solveL thm _ concl = do
+    userMark ["solveL:", pretty thm, pretty concl]
     if conclusion thm == concl then
       return (\[] -> return thm, [])
     else
       fail . unwords $ [
-        unwords ["solveLocalEdit: conclusion of supplied theorem `", pretty thm, "'"]
+        unwords ["solveL: conclusion of supplied theorem `", pretty thm, "'"]
       , "does not match goal."
       ]
 
-  solvePreTactic :: TheoremPreTactic
-  solvePreTactic thm =
+  solveP :: TheoremPreTactic
+  solveP thm =
     PreTactic {
-      _preTacticName = "solvePreTactic"
-    , _localEdit     = solveLocalEdit thm
+      _preTacticName = "solveP"
+    , _localEdit     = solveL thm
     }
 
-  conversionLocalEdit :: Conversion -> LocalEdit
-  conversionLocalEdit conv assms concl = do
+  conversionL :: Conversion -> LocalEdit
+  conversionL conv assms concl = do
     conv'         <- conv concl
     (left, right) <- fromEquality . conclusion $ conv'
     if left == concl then do
-      symm <- symmetry conv'
-      return (\[t] -> equalityModusPonens symm t, [(assms, right)])
+      symm <- symmetryR conv'
+      return (\[t] -> equalityModusPonensR symm t, [(assms, right)])
     else if right == concl then do
-      return (\[t] -> equalityModusPonens conv' t, [(assms, left)])
+      return (\[t] -> equalityModusPonensR conv' t, [(assms, left)])
     else
       fail . unwords $ [
-        "conversionLocalEdit: supplied conversion produced a bad equation"
+        "conversionL: supplied conversion produced a bad equation"
       , unwords ["`", pretty conv', "' when applied to goal `", pretty concl, "'."]
       ]
 
-  conversionPreTactic :: Conversion -> PreTactic
-  conversionPreTactic conv =
+  conversionP :: Conversion -> PreTactic
+  conversionP conv =
     PreTactic {
-      _preTacticName = "conversionPreTactic"
-    , _localEdit     = conversionLocalEdit conv
+      _preTacticName = "conversionP"
+    , _localEdit     = conversionL conv
     }
 
-  unfoldConstantPreTactic :: Theorem -> PreTactic
-  unfoldConstantPreTactic = conversionPreTactic . replaceAllConv . constConv
+  unfoldConstantP :: Theorem -> PreTactic
+  unfoldConstantP = conversionP . replaceEverywhereConv . unfoldConstantConv
 
-  betaReducePreTactic :: PreTactic
-  betaReducePreTactic = conversionPreTactic . replaceAllConv . tryConv $ beta
+  betaReduceP :: PreTactic
+  betaReduceP = conversionP . replaceEverywhereConv . tryConv $ betaR
+
+  etaReduceP :: PreTactic
+  etaReduceP = conversionP . replaceEverywhereConv . tryConv $ etaR

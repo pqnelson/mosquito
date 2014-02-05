@@ -18,6 +18,10 @@
       * Names of rules are suffixed with R (e.g. alphaR)
       * Names of constants are suffixed with C (e.g. trueC)
       * Names of defining theorems for constants are suffixed with D (e.g. trueD)
+      * Names of local edits are suffixed with L (e.g. symmetryL)
+      * Names of pretactics are suffixed with P (e.g. symmetryP)
+      * Names of conversions and conversionals are suffixed with Conv (e.g.
+        replaceEverywhereConv)
 
   * Every record must have accompanying first class labels generated using
     Data.Label.  See src/Mosquito/Kernel/Term.hs for an example.

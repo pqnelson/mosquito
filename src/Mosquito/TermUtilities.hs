@@ -5,6 +5,8 @@
 module Mosquito.TermUtilities (
   -- * Utility functions
   partialFromSuccess,
+  -- * Useful deconstruction functions
+  fromBinaryOperation,
   -- * Type utilities
   unifyTypes
 )
@@ -30,6 +32,16 @@ where
     inference inf
       (const . error $ "partialFromSuccess")
       id
+
+  --
+  -- * More useful deconstruction functions
+  --
+
+  fromBinaryOperation :: Term -> Inference (Term, Term, Term)
+  fromBinaryOperation term = do
+    (app, right) <- fromApp term
+    (op, left)   <- fromApp app
+    return (op, left, right)
 
   --
   -- * Type utilities

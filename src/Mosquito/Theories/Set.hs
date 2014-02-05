@@ -8,7 +8,6 @@ where
   import Mosquito.ProofState.Tactics
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.ProofState
-  import Mosquito.ProofState.Unfolding
 
   import Mosquito.Theories.Boolean
   import Mosquito.Theories.Utility

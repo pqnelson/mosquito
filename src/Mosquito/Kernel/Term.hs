@@ -64,9 +64,10 @@ module Mosquito.Kernel.Term (
   hypotheses, conclusion, provenance,
   union, delete, deleteTheorem,
   -- ** Basic HOL theorems
-  alpha, symmetry, transitivity, abstract, combine, eta, beta,
-  assume, equalityModusPonens, deductAntiSymmetric,
-  typeInstantiation, instantiation,
+  alphaR, symmetryR, transitivityR, abstractR,
+  combineR, etaR, betaR,
+  assumeR, equalityModusPonensR, deductAntiSymmetricR,
+  typeInstantiationR, instantiationR,
   -- * Extending the logic
   primitiveNewDefinedConstant, primitiveNewDefinedType, primitiveNewAxiom
 )
@@ -932,10 +933,10 @@ where
   -- ** The basic HOL theorems
   --
 
-  -- |Produces a derivation of @{} ⊢ t = t'@ given two terms @t@ and @t'@
+  -- |Produces a derivation of @{} |- t = t'@ given two terms @t@ and @t'@
   --  that are alpha-equivalent.
-  alpha :: Term -> Term -> Inference Theorem
-  alpha t u = do
+  alphaR :: Term -> Term -> Inference Theorem
+  alphaR t u = do
     kernelMark ["alpha:", pretty t, pretty u]
     if t == u then do
       eq     <- mkEquality t u
@@ -948,19 +949,19 @@ where
       ]
 
   -- |Produces a derivation of @Gamma ⊢ s = t@ given a derivation of
-  --  @Gamma ⊢ t = s@.  Note, not strictly necessary to have this in
+  --  @Gamma |- t = s@.  Note, not strictly necessary to have this in
   --  the kernel.
-  symmetry :: Theorem -> Inference Theorem
-  symmetry (Theorem p (hyps, concl)) = do
+  symmetryR :: Theorem -> Inference Theorem
+  symmetryR (Theorem p (hyps, concl)) = do
     kernelMark ["symmetry:", pretty concl]
     (left, right) <- fromEquality concl
     eq            <- mkEquality right left
     return $ Theorem p (hyps, eq)
 
-  -- |Produces a derivation of @Gamma u Delta ⊢ t = v@ given a derivation of
-  --  @Gamma ⊢ t = s@ and @Delta ⊢ s = u@ for all t, u and v.
-  transitivity :: Theorem -> Theorem -> Inference Theorem
-  transitivity (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
+  -- |Produces a derivation of @Gamma u Delta |- t = v@ given a derivation of
+  --  @Gamma |- t = s@ and @Delta |- s = u@ for all t, u and v.
+  transitivityR :: Theorem -> Theorem -> Inference Theorem
+  transitivityR (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     kernelMark ["transitivity:", pretty concl, pretty concl']
     (left, right)   <- fromEquality concl
     (left', right') <- fromEquality concl'
@@ -975,9 +976,9 @@ where
         "term `" ++ pretty left' ++ "'."
       ]
 
-  -- |Produces a derivation @{p} ⊢ p@ for @p@ a term of type @Bool@.
-  assume :: Term -> Inference Theorem
-  assume t = do
+  -- |Produces a derivation @{p} |- p@ for @p@ a term of type @Bool@.
+  assumeR :: Term -> Inference Theorem
+  assumeR t = do
     kernelMark ["assume:", pretty t]
     typeOfT <- typeOf t
     if typeOfT == boolType then
@@ -988,20 +989,20 @@ where
       , unwords ["`", pretty typeOfT, "'."]
       ]
 
-  -- |Produces a derivation of @(Gamma - q) u (Delta - p) ⊢ p = q@ from a pair of
-  --  derivations of @Gamma ⊢ p@ and @Delta ⊢ q@.
-  deductAntiSymmetric :: Theorem -> Theorem -> Inference Theorem
-  deductAntiSymmetric (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
+  -- |Produces a derivation of @(Gamma - q) u (Delta - p) |- p = q@ from a pair of
+  --  derivations of @Gamma |- p@ and @Delta |- q@.
+  deductAntiSymmetricR :: Theorem -> Theorem -> Inference Theorem
+  deductAntiSymmetricR (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     kernelMark ["deductAntiSymmetric:", pretty concl, pretty concl']
     eq <- mkEquality concl concl'
     let hyps'' = (delete concl hyps') `union` (delete concl' hyps)
     return $ Theorem (p `track` q) (hyps'', eq)
 
-  -- |Produces a derivation of @Gamma ⊢ λx:ty. t = λx:ty. u@ given a derivation
-  --  of the form @Gamma ⊢ t = u@ providing @x@ does not appear free in the
+  -- |Produces a derivation of @Gamma |- fn x:ty. t = fn x:ty. u@ given a derivation
+  --  of the form @Gamma |- t = u@ providing @x@ does not appear free in the
   --  context @Gamma@.
-  abstract :: String -> Type -> Theorem -> Inference Theorem
-  abstract name ty (Theorem p (hyps, concl)) = do
+  abstractR :: String -> Type -> Theorem -> Inference Theorem
+  abstractR name ty (Theorem p (hyps, concl)) = do
     kernelMark ["abstract:", name, pretty ty, pretty concl]
     if not $ name `S.member` fvs hyps then do
       (left, right) <- fromEquality concl
@@ -1013,10 +1014,10 @@ where
         "in hypotheses of supplied theorem: `" ++ name ++ "'."
       ]
 
-  -- |Produces a derivation of @Gamma u Delta ⊢ q@ given two derivations of
-  --  @Gamma ⊢ p = q@ and @Delta ⊢ p@ respectively.
-  equalityModusPonens :: Theorem -> Theorem -> Inference Theorem
-  equalityModusPonens (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
+  -- |Produces a derivation of @Gamma u Delta |- q@ given two derivations of
+  --  @Gamma |- p = q@ and @Delta |- p@ respectively.
+  equalityModusPonensR :: Theorem -> Theorem -> Inference Theorem
+  equalityModusPonensR (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     kernelMark ["equalityModusPonens:", pretty concl, pretty concl']
     (left, right) <- fromEquality concl
     if concl' == left
@@ -1030,10 +1031,10 @@ where
           "to: `" ++ pretty left ++ "' but found: `" ++ pretty concl' ++ "'."
         ]
 
-  -- |Produces a derivation of @Gamma u Delta ⊢ f x = g y@ given two derivations
-  --  of the form @Gamma ⊢ f = g@ and @Delta ⊢ x = y@.
-  combine :: Theorem -> Theorem -> Inference Theorem
-  combine (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
+  -- |Produces a derivation of @Gamma u Delta |- f x = g y@ given two derivations
+  --  of the form @Gamma |- f = g@ and @Delta |- x = y@.
+  combineR :: Theorem -> Theorem -> Inference Theorem
+  combineR (Theorem p (hyps, concl)) (Theorem q (hyps', concl')) = do
     kernelMark ["combine:", pretty concl, pretty concl']
     (f, g) <- fromEquality concl
     (x, y) <- fromEquality concl'
@@ -1042,27 +1043,27 @@ where
     eq     <- mkEquality left right
     return $ Theorem (p `track` q) (hyps `union` hyps', eq)
 
-  -- |Produces a derivation @{} ⊢ (λx:ty. t)u = t[x := u]@ given an application.
+  -- |Produces a derivation @{} |- (fn x:ty. t)u = t[x := u]@ given an application.
   --  Note that this derivation rule is stronger than its HOL-light counterpart,
   --  as we permit full beta-equivalence in the kernel via this rule.
-  beta :: Term -> Inference Theorem
-  beta t@(App (Lam name _ body) b) = do
+  betaR :: Term -> Inference Theorem
+  betaR t@(App (Lam name _ body) b) = do
     kernelMark ["beta:", pretty t]
     let subst = mkSubstitution [(name, b)]
     eq   <- mkEquality t $ termSubst subst body
     return $ Theorem DerivedSafely ([], eq)
-  beta t =
+  betaR t =
     fail . unwords $ [
       "beta: Cannot apply `beta' as term passed to function is not a valid",
       "beta-redex, in term: `" ++ pretty t ++ "'."
     ]
 
-  -- |Produces a derivation of @{} ⊢ λx:ty. (t x) = t@ when @x@ is not in the
+  -- |Produces a derivation of @{} |- fn x:ty. (t x) = t@ when @x@ is not in the
   --  free variables of @t@.  Note that unlike HOL-light we take this as a
   --  primitive inference rule in the kernel, as opposed to taking it as an
   --  axiom later.
-  eta :: Term -> Inference Theorem
-  eta t@(Lam name _ (App left (Var v _)))
+  etaR :: Term -> Inference Theorem
+  etaR t@(Lam name _ (App left (Var v _)))
     | v == name = do
         kernelMark ["eta:", pretty t]
         if not $ v `S.member` fv left then do
@@ -1084,13 +1085,17 @@ where
     , unwords ["eta-redex, in term: `", pretty t, "'."]
     ]
 
-  typeInstantiation :: Substitution Type -> Theorem -> Inference Theorem
-  typeInstantiation subst (Theorem p (hyps, concl)) = do
+  -- |Produces a derivation of $Gamma[alpha_i := phi_i] |- t[alpha_i := phi_i]@ from
+  --  a derivation of @Gamma |- t@ for @0 <= i@.
+  typeInstantiationR :: Substitution Type -> Theorem -> Inference Theorem
+  typeInstantiationR subst (Theorem p (hyps, concl)) = do
     kernelMark ["typeInstantiation:", pretty subst, pretty concl]
     return $ Theorem p (map (termTypeSubst subst) hyps, termTypeSubst subst concl)
 
-  instantiation :: Substitution Term -> Theorem -> Inference Theorem
-  instantiation subst (Theorem p (hyps, concl)) = do
+  -- |Produces a derivation of $Gamma[a_i := t_i] |- t[a_i := t_i]@ from
+  --  a derivation of @Gamma |- t@ for @0 <= i@.
+  instantiationR :: Substitution Term -> Theorem -> Inference Theorem
+  instantiationR subst (Theorem p (hyps, concl)) = do
     kernelMark ["instantiation:", pretty subst, pretty concl]
     return $ Theorem p (map (termSubst subst) hyps, termSubst subst concl)
 
@@ -1098,6 +1103,10 @@ where
   -- * Extending the logic
   --
 
+  -- |Produces a new defined constant.  The right hand side of the definition must be closed
+  --  (i.e. no free variables), and the free type variables of the right hand side must be a
+  --  subset of the free type variables of the constant's type.  Returns the new constant
+  --  and a defining theorem.
   primitiveNewDefinedConstant :: QualifiedName -> Term -> Type -> Inference (Term, Theorem)
   primitiveNewDefinedConstant name t typ =
     if fv t == S.empty then
@@ -1117,6 +1126,7 @@ where
       , unwords ["term: `", pretty t, "'."]
       ]
 
+  -- |Defines a new inhabited type in provable bijection with a subset of an existing type.
   primitiveNewDefinedType :: QualifiedName -> Theorem -> Inference (Theorem, Theorem, Term, Term, TypeOperatorDescription)
   primitiveNewDefinedType name theorem = do
     (p, variable)       <- fromApp . conclusion $ theorem
@@ -1154,6 +1164,7 @@ where
         "primitiveNewDefinedType: defining theorem for a new type must have no assumptions."
       ]
 
+  -- |Introduces an axiom.  Dangerous!
   primitiveNewAxiom :: Term -> Inference Theorem
   primitiveNewAxiom term = do
     typeOfTerm <- typeOf term

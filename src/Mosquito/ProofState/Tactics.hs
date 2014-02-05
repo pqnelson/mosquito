@@ -62,7 +62,7 @@ module Mosquito.ProofState.Tactics (
   -- * Useful lifting
 
   symmetrise :: PreTactic -> Tactic
-  symmetrise pretactic = apply pretactic <|> (apply symmetryPreTactic >=> apply pretactic)
+  symmetrise pretactic = apply pretactic <|> (apply symmetryP >=> apply pretactic)
 
   -- * Rejigging tactics based on equational reasoning
 
