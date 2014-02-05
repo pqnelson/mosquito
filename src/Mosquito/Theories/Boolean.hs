@@ -33,9 +33,14 @@ module Mosquito.Theories.Boolean {- (
   -- ** If, and only if
   iffDecl, iffC, iffD,
   mkIff, fromIff
+  -- ** Unique existence
+  uniqueExistsDeclaration, uniqueExistsC, uniqueExistsD,
+  mkUniqueExists, fromUniqueExists
 ) -} where
 
   import Prelude hiding (fail, repeat)
+
+  import Debug.Trace
 
   import Mosquito.DerivedRules
 
@@ -98,8 +103,8 @@ module Mosquito.Theories.Boolean {- (
 
   -- |Produces a derivation of @Gamma ⊢ p@ from a derivation of
   --  @Gamma |- p = true@.
-  trueEqualityEliminationT :: Theorem -> Inference Theorem
-  trueEqualityEliminationT thm = do
+  trueEqualityEliminationR :: Theorem -> Inference Theorem
+  trueEqualityEliminationR thm = do
     trueI <- trueIntroductionT
     symm  <- symmetryR thm
     equalityModusPonensR symm trueI
@@ -109,22 +114,22 @@ module Mosquito.Theories.Boolean {- (
     userMark ["trueEqualityEliminationL:", pretty concl]
     trueC <- trueC
     eq <- mkEquality concl trueC
-    return (\[t] -> trueEqualityEliminationT t, [(assms, eq)])
+    return (\[t] -> trueEqualityEliminationR t, [(assms, eq)])
 
   trueEqualityEliminationP :: PreTactic
   trueEqualityEliminationP = mkPreTactic "trueEqualityEliminationP" trueEqualityEliminationL
 
   -- |Produces a derivation of @Gamma ⊢ p = true@ from a derivation
   --  of @Gamma ⊢ p@.
-  trueEqualityIntroductionT :: Theorem -> Inference Theorem
-  trueEqualityIntroductionT thm = do
+  trueEqualityIntroductionR :: Theorem -> Inference Theorem
+  trueEqualityIntroductionR thm = do
     let p =  conclusion thm
     assmP <- assumeR p  -- p ⊢ p
     trueI <- trueIntroductionT     -- {} ⊢ true
     das1  <- deductAntiSymmetricR assmP trueI -- p ⊢ p = true
     let c =  conclusion das1
     assmC <- assumeR c -- p = true ⊢ p = true
-    eqE   <- trueEqualityEliminationT assmC -- p = true ⊢ p
+    eqE   <- trueEqualityEliminationR assmC -- p = true ⊢ p
     das2  <- deductAntiSymmetricR das1 eqE -- ⊢ p = (p = true)
     symm  <- symmetryR das2
     equalityModusPonensR symm thm
@@ -135,20 +140,19 @@ module Mosquito.Theories.Boolean {- (
     trueC <- trueC
     (left, right) <- fromEquality concl
     if right == trueC then do
-      return $ (\[t] -> trueEqualityIntroductionT t, [(assms, left)])
+      return $ (\[t] -> trueEqualityIntroductionR t, [(assms, left)])
     else
       fail "`trueEqILocalEdit'"
 
   trueEqualityIntroductionP :: PreTactic
   trueEqualityIntroductionP = mkPreTactic "trueEqualityIntroductionP" trueEqualityIntroductionL
 
-{-
   --
   -- ** Universal quantification
   --
 
-  forallDecl :: Inference (Term, Theorem)
-  forallDecl = do
+  forallDeclaration :: Inference (Term, Theorem)
+  forallDeclaration = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "∀"
     trueC     <- trueC
     let right =  mkLam "a" alphaType trueC
@@ -158,10 +162,10 @@ module Mosquito.Theories.Boolean {- (
     primitiveNewDefinedConstant name def quantifierType
 
   forallC :: Inference Term
-  forallC = constantOfDecl forallDecl
+  forallC = constantOfDecl forallDeclaration
 
   forallD :: Inference Theorem
-  forallD = theoremOfDecl forallDecl
+  forallD = theoremOfDecl forallDeclaration
 
   mkForall :: String -> Type -> Term -> Inference Term
   mkForall name ty body = do
@@ -187,8 +191,8 @@ module Mosquito.Theories.Boolean {- (
   -- ** Logical falsity
   --
 
-  falseDecl :: Inference (Term, Theorem)
-  falseDecl = do
+  falseDeclaration :: Inference (Term, Theorem)
+  falseDeclaration = do
     let name =  mkQualifiedName ["Mosquito", "Bool"] "false"
     forallC  <- forallC
     let subst = mkSubstitution [("α", boolType)]
@@ -198,17 +202,17 @@ module Mosquito.Theories.Boolean {- (
     primitiveNewDefinedConstant name def boolType
 
   falseC :: Inference Term
-  falseC = constantOfDecl falseDecl
+  falseC = constantOfDecl falseDeclaration
 
   falseD :: Inference Theorem
-  falseD = theoremOfDecl falseDecl
+  falseD = theoremOfDecl falseDeclaration
 
   --
   -- ** Conjunction
   --
 
-  conjunctionDecl :: Inference (Term, Theorem)
-  conjunctionDecl = do
+  conjunctionDeclaration :: Inference (Term, Theorem)
+  conjunctionDeclaration = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "_∧_"
     let f     =  mkVar "f" binaryConnectiveType
     trueC     <- trueC
@@ -223,10 +227,10 @@ module Mosquito.Theories.Boolean {- (
     primitiveNewDefinedConstant name def binaryConnectiveType
 
   conjunctionC :: Inference Term
-  conjunctionC = constantOfDecl conjunctionDecl
+  conjunctionC = constantOfDecl conjunctionDeclaration
 
   conjunctionD :: Inference Theorem
-  conjunctionD = theoremOfDecl conjunctionDecl
+  conjunctionD = theoremOfDecl conjunctionDeclaration
 
   mkConjunction :: Term -> Term -> Inference Term
   mkConjunction left right = do
@@ -240,32 +244,31 @@ module Mosquito.Theories.Boolean {- (
     (conjC, left) <- fromApp pre
     return (left, right)
 
-  conjunctionIThm :: Theorem -> Theorem -> Inference Theorem
-  conjunctionIThm left right = do
+  conjunctionIntroductionR :: Theorem -> Theorem -> Inference Theorem
+  conjunctionIntroductionR left right = do
     conjunctionD <- conjunctionD
     conj         <- mkConjunction (conclusion left) (conclusion right)
-    prf          <- mkConjectureRule "conjunctionI" (hypotheses left ++ hypotheses right) conj
-    prf          <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
-    prf          <- act prf . Apply $ betaReducePreTactic
-    prf          <- act prf . Apply $ alphaPreTactic
+    prf          <- mkConjectureRule "conjunctionIntroduction" (hypotheses left ++ hypotheses right) conj
+    prf          <- act prf . Apply $ unfoldConstantP conjunctionD
+    prf          <- act prf . Apply $ betaReduceP
+    prf          <- act prf . Apply $ alphaP
     qed prf
 
-  conjunctionILocalEdit :: LocalEdit
-  conjunctionILocalEdit assms concl = do
+  conjunctionIntroductionL :: LocalEdit
+  conjunctionIntroductionL assms concl = do
     (left, right) <- fromConjunction concl
-    return (\[left, right] -> conjunctionIThm left right, [(assms, left), (assms, right)])
+    return (\[left, right] -> conjunctionIntroductionR left right, [(assms, left), (assms, right)])
 
-  conjunctionIPreTactic :: PreTactic
-  conjunctionIPreTactic = mkPreTactic "conjunctionIPreTactic" conjunctionILocalEdit
-
+  conjunctionIntroductionP :: PreTactic
+  conjunctionIntroductionP = mkPreTactic "conjunctionIntroductionP" conjunctionIntroductionL
 
   --
   -- ** Implication
   --
 
   -- |The declaration and definition of material implication.
-  implicationDecl :: Inference (Term, Theorem)
-  implicationDecl = do
+  implicationDeclaration :: Inference (Term, Theorem)
+  implicationDeclaration = do
     let name    =  mkQualifiedName ["Mosquito", "Bool"] "_⇒_"
     let p       =  mkVar "p" boolType
     let q       =  mkVar "q" boolType
@@ -276,11 +279,11 @@ module Mosquito.Theories.Boolean {- (
 
   -- |The implication constant.
   implicationC :: Inference Term
-  implicationC = constantOfDecl implicationDecl
+  implicationC = constantOfDecl implicationDeclaration
 
   -- |The implication defining theorem.
   implicationD :: Inference Theorem
-  implicationD = theoremOfDecl implicationDecl
+  implicationD = theoremOfDecl implicationDeclaration
 
   -- |Makes an implication from two boolean-typed terms.
   mkImplication :: Term -> Term -> Inference Term
@@ -300,8 +303,8 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of the negation constant.
-  negationDecl :: Inference (Term, Theorem)
-  negationDecl = do
+  negationDeclaration :: Inference (Term, Theorem)
+  negationDeclaration = do
     let name    =  mkQualifiedName ["Mosquito", "Bool"] "¬"
     let a       =  mkVar "a" boolType
     falseC      <- falseC
@@ -311,11 +314,11 @@ module Mosquito.Theories.Boolean {- (
 
   -- |The negation constant.
   negationC :: Inference Term
-  negationC = constantOfDecl negationDecl
+  negationC = constantOfDecl negationDeclaration
 
   -- |The negation defining theorem.
   negationD :: Inference Theorem
-  negationD = theoremOfDecl negationDecl
+  negationD = theoremOfDecl negationDeclaration
 
   -- |Makes a negation from a boolean-typed term.
   mkNegation :: Term -> Inference Term
@@ -333,8 +336,8 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of disjunction.
-  disjunctionDecl :: Inference (Term, Theorem)
-  disjunctionDecl = do
+  disjunctionDeclaration :: Inference (Term, Theorem)
+  disjunctionDeclaration = do
     let name = mkQualifiedName ["Mosquito", "Bool"] "_∨_"
     let p    = mkVar "p" boolType
     let q    = mkVar "q" boolType
@@ -349,11 +352,11 @@ module Mosquito.Theories.Boolean {- (
 
   -- |The disjunction constant.
   disjunctionC :: Inference Term
-  disjunctionC = constantOfDecl disjunctionDecl
+  disjunctionC = constantOfDecl disjunctionDeclaration
 
   -- |The disjunction defining theorem.
   disjunctionD :: Inference Theorem
-  disjunctionD = theoremOfDecl disjunctionDecl
+  disjunctionD = theoremOfDecl disjunctionDeclaration
 
   -- |Makes a disjunction from two boolean-typed terms.
   mkDisjunction :: Term -> Term -> Inference Term
@@ -373,8 +376,8 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of the existential quantifier.
-  existsDecl :: Inference (Term, Theorem)
-  existsDecl = do
+  existsDeclaration :: Inference (Term, Theorem)
+  existsDeclaration = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "∃"
     let p     =  mkVar "P" $ mkFunctionType alphaType boolType
     let q     =  mkVar "q" boolType
@@ -390,11 +393,11 @@ module Mosquito.Theories.Boolean {- (
 
   -- |The existential quantifier constant.
   existsC :: Inference Term
-  existsC = constantOfDecl existsDecl
+  existsC = constantOfDecl existsDeclaration
 
   -- |The existential quantifier defining theorem.
   existsD :: Inference Theorem
-  existsD = theoremOfDecl existsDecl
+  existsD = theoremOfDecl existsDeclaration
 
   -- |Makes an existential quantification from a term and
   --  typed variable.
@@ -415,9 +418,8 @@ module Mosquito.Theories.Boolean {- (
   -- ** If and only if
   --
 
-  -- \p q. p ==> q /\ q ==> p
-  iffDecl :: Inference (Term, Theorem)
-  iffDecl = do
+  iffDeclaration :: Inference (Term, Theorem)
+  iffDeclaration = do
     let name = mkQualifiedName ["Mosquito", "Bool"] "_⇔_"
     let p    = mkVar "p" boolType
     let q    = mkVar "q" boolType
@@ -429,10 +431,10 @@ module Mosquito.Theories.Boolean {- (
     primitiveNewDefinedConstant name lq binaryConnectiveType
 
   iffC :: Inference Term
-  iffC = constantOfDecl iffDecl
+  iffC = constantOfDecl iffDeclaration
 
   iffD :: Inference Theorem
-  iffD = theoremOfDecl iffDecl
+  iffD = theoremOfDecl iffDeclaration
 
   mkIff :: Term -> Term -> Inference Term
   mkIff left right = do
@@ -447,23 +449,64 @@ module Mosquito.Theories.Boolean {- (
     return (left, right)
 
   --
-  -- * Misc
+  -- * Unique existence
   --
 
+  -- | ex x. p /\ forall y. p y ==> x = y
+  uniqueExistsDeclaration :: Inference (Term, Theorem)
+  uniqueExistsDeclaration = do
+    let name =  mkQualifiedName ["Mosquito", "Bool"] "∃!"
+    let p    =  mkVar "P" $ mkFunctionType alphaType boolType
+    let x    =  mkVar "x" alphaType
+    let y    =  mkVar "y" alphaType
+    py       <- mkApp p y
+    px       <- mkApp p x
+    xy       <- mkEquality x y
+    pyxy     <- mkImplication py xy
+    right    <- mkForall "y" alphaType pyxy
+    body     <- mkConjunction px right
+    ex       <- mkExists "x" alphaType body 
+    let defn =  mkLam "P" (mkFunctionType alphaType boolType) ex
+    primitiveNewDefinedConstant name defn quantifierType
+
+  uniqueExistsC :: Inference Term
+  uniqueExistsC = constantOfDecl uniqueExistsDeclaration
+
+  uniqueExistsD :: Inference Theorem
+  uniqueExistsD = theoremOfDecl uniqueExistsDeclaration
+
+  mkUniqueExists :: String -> Type -> Term -> Inference Term
+  mkUniqueExists name ty body = do
+    uniqueExC <- uniqueExistsC
+    let subst =  mkSubstitution [("α", ty)]
+    let inst  =  termTypeSubst subst uniqueExC
+    let lam   =  mkLam name ty body
+    mkApp inst lam
+
+  fromUniqueExists :: Term -> Inference (String, Type, Term)
+  fromUniqueExists term = do
+    (quantifier, lam) <- fromApp term
+    fromLam lam
+
+  --
+  -- * Misc
+  --
   -- | Produces a derivation of @{} ⊢ forall t. t = t@.
-  reflexivityThm :: Inference Theorem
-  reflexivityThm = do
+  reflexivityT :: Inference Theorem
+  reflexivityT = do
     forallD <- forallD
     let t = mkVar "t" alphaType
     eq    <- mkEquality t t
     conj  <- mkForall "t" alphaType eq
     prf   <- mkConjecture "reflexivityThm" conj
-    prf   <- act prf . Apply $ unfoldConstantPreTactic forallD
-    prf   <- act prf . Apply $ betaReducePreTactic
-    prf   <- act prf . Apply $ abstractPreTactic
-    prf   <- act prf . Apply $ trueEqIPreTactic
-    prf   <- act prf . Apply $ alphaPreTactic
+    prf   <- act prf . Apply $ unfoldConstantP forallD
+    prf   <- act prf . Apply $ betaReduceP
+    prf   <- act prf . Apply $ abstractP
+    prf   <- act prf . Apply $ trueEqualityIntroductionP
+    prf   <- act prf . Apply $ alphaP
     qed prf
+
+{-
 
   -- trueEqIffThm :: Inference Theorem
 {-
