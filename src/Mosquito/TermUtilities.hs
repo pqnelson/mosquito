@@ -4,9 +4,11 @@
 --  in the kernel that can safely be moved outside of the kernel.
 module Mosquito.TermUtilities (
   -- * Utility functions
-  partialFromSuccess,
+  partialFromSuccess, freshs,
   -- * Useful deconstruction functions
   fromBinaryOperation,
+  -- * Useful construction funtions
+  mkVars, mkLams,
   -- * Type utilities
   unifyTypes
 )
@@ -33,10 +35,44 @@ where
       (const . error $ "partialFromSuccess")
       id
 
+  -- |Generates a list of fresh names of a given length, using a suggested base
+  --  name (otherwise defaulting to "f" as the base) and avoiding any names
+  --  present in the provided set of names.
+  freshs :: Int -> Maybe String -> S.Set String -> [String]
+  freshs 0 base seen = []
+  freshs n base seen =
+    let name   = fresh base seen in
+    let others = freshs (n - 1) base (S.insert name seen) in
+      name:others
+
+  --
+  -- * More useful construction functions
+  --
+
+  -- |Generalised form of "mkVar".  Creates a list of variables based
+  --  on a given association list between names of variables and types.
+  mkVars :: [(String, Type)] -> Inference [Term]
+  mkVars []              = fail "mkVars: input list empty"
+  mkVars [(name, ty)]    = return . return $ mkVar name ty
+  mkVars ((name, ty):xs) = do
+    tail     <- mkVars xs
+    let head =  mkVar name ty
+    return (head:tail)
+
+  -- |Generalised form of "mkLam".  Creates an n-fold lambda-abstraction over
+  --  a given term based on a given association list of names of variables to
+  --  abstract and their types.
+  mkLams :: [(String, Type)] -> Term -> Term
+  mkLams []           body = body
+  mkLams ((n, ty):xs) body = mkLam n ty (mkLams xs body)
+
   --
   -- * More useful deconstruction functions
   --
 
+  -- |Deconstructs an arbitrary binary operation.  The operation
+  --  is the first element return, the left and right arguments of the
+  --  operation follow.
   fromBinaryOperation :: Term -> Inference (Term, Term, Term)
   fromBinaryOperation term = do
     (app, right) <- fromApp term
@@ -47,6 +83,7 @@ where
   -- * Type utilities
   --
 
+  -- |Unifies two types.
   unifyTypes :: Type -> Type -> Inference (Substitution Type)
   unifyTypes (typeView->TyVarView t)            right@(typeView->TyVarView t')
     | t == t'   = return empty

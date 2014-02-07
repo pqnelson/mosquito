@@ -20,15 +20,15 @@ where
   setCharacteristicFunction :: Inference Term
   setCharacteristicFunction = do
     trueC <- trueC
-    return $ mkLam "x" setType trueC
+    return $ mkLam "a" setType trueC
 
-  setDefiningTheorem = P.putStrLn $ do
+  setTypeExistsT = P.putStrLn $ do
     charSet <- setCharacteristicFunction
     existsD <- existsD
     trueD   <- trueD
     let s   =  mkVar "s" setType
     body    <- mkApp charSet s
     conj    <- mkExists "s" setType body
-    prf     <- mkConjecture "setDefiningTheorem" conj
-    prf     <- act prf . Apply $ unfoldConstantPreTactic existsD
+    prf     <- mkConjecture "setTypeExistsT" conj
+    prf     <- act prf . Apply $ unfoldConstantP existsD
     return prf

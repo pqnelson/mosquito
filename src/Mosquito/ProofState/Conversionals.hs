@@ -6,7 +6,7 @@
 module Mosquito.ProofState.Conversionals (
   -- * The conversion type, and simple conversions
   Conversion,
-  failConv, successConv,
+  failConv, successConv, conversionR,
   -- * Conversionals
   thenConv, repeatConv, elseConv, tryConv,
   -- * Syntax specific conversionals
@@ -20,6 +20,8 @@ module Mosquito.ProofState.Conversionals (
 where
 
   import Prelude hiding (fail)
+
+  import qualified Data.Set as S
 
   import Debug.Trace
 
@@ -48,6 +50,12 @@ where
   -- |The conversion that always succeeds (reflexivity).
   successConv :: Conversion
   successConv term = alphaR term term
+
+  -- |Converts a conversion into a rule.
+  conversionR :: Conversion -> Theorem -> Inference Theorem
+  conversionR conv thm = do
+    conv' <- conv . conclusion $ thm
+    equalityModusPonensR conv' thm
 
   --
   -- * Conversionals (conversion valued functionals)
@@ -113,11 +121,22 @@ where
   -- * More refined conversionals
   --
 
+  freshenTypesR :: Theorem -> Inference Theorem
+  freshenTypesR thm = do
+    let cTvs  = typeVars . conclusion $ thm
+    let hTvs  = S.unions $ map typeVars . hypotheses $ thm
+    let tvs   = S.union cTvs hTvs
+    let new   = freshs (length . S.toAscList $ tvs) Nothing tvs
+    let base  = zipWith (\x y -> (x, mkTyVar y)) (S.toAscList tvs) new
+    let subst = mkSubstitution base
+    typeInstantiationR subst thm
+
   -- |Unfolds a constant with the constant's defining theorem.
   unfoldConstantConv :: Theorem -> Conversion
   unfoldConstantConv thm term =
     if isConst term then do
-      (left, right) <- fromEquality . conclusion $ thm
+      thm' <- freshenTypesR thm
+      (left, right) <- fromEquality . conclusion $ thm'
       if left == term then do
         typT <- typeOf term
         typR <- typeOf right
@@ -125,7 +144,7 @@ where
         --      we need to completely freshen the type variables in the theorem
         --      before we unify against the constant, before instantiating
         unif <- unifyTypes typT typR
-        thm  <- typeInstantiationR unif thm
+        thm  <- typeInstantiationR unif thm'
         return thm
       else
         successConv term

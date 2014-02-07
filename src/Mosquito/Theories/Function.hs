@@ -12,6 +12,8 @@ module Mosquito.Theories.Function (
 )
 where
 
+  import Mosquito.TermUtilities
+
   import Mosquito.Kernel.Term
   import Mosquito.Kernel.QualifiedName
 
@@ -25,8 +27,8 @@ where
   idDecl :: Inference (Term, Theorem)
   idDecl = do
     let name = mkQualifiedName ["Mosquito", "Function"] "id"
-    let x    = mkVar "x" alphaType
-    let body = mkLam "x" alphaType x
+    let a    = mkVar "a" alphaType
+    let body = mkLam "a" alphaType a
     primitiveNewDefinedConstant name body $ mkFunctionType alphaType alphaType
 
   idC :: Inference Term
@@ -38,9 +40,9 @@ where
   constDecl :: Inference (Term, Theorem)
   constDecl = do
     let name = mkQualifiedName ["Mosquito", "Function"] "const"
-    let x    = mkVar "x" alphaType
-    let y    = mkVar "y" betaType
-    let body = mkLam "x" alphaType (mkLam "y" betaType x)
+    let a    = mkVar "a" alphaType
+    let b    = mkVar "b" betaType
+    let body = mkLam "a" alphaType (mkLam "b" betaType a)
     primitiveNewDefinedConstant name body $ mkFunctionType alphaType (mkFunctionType betaType alphaType)
 
   constC :: Inference Term
@@ -52,11 +54,11 @@ where
   applyDecl :: Inference (Term, Theorem)
   applyDecl = do
     let name =  mkQualifiedName ["Mosquito", "Function"] "_$_"
-    let x    =  mkVar "x" alphaType
+    let a    =  mkVar "a" alphaType
     let fty  =  mkFunctionType alphaType betaType
     let f    =  mkVar "f" fty
-    fx       <- mkApp f x
-    let body =  mkLam "f" fty $ mkLam "x" alphaType fx
+    fa       <- mkApp f a
+    let body =  mkLam "f" fty $ mkLam "a" alphaType fa
     primitiveNewDefinedConstant name body $ mkFunctionType fty (mkFunctionType alphaType betaType)
 
   applyC :: Inference Term
@@ -76,11 +78,11 @@ where
     let name =  mkQualifiedName ["Mosquito", "Function"] "flip"
     let fty  =  mkFunctionType alphaType $ mkFunctionType betaType gammaType
     let f    =  mkVar "f" fty
-    let x    =  mkVar "x" alphaType
-    let y    =  mkVar "y" betaType
-    fx       <- mkApp f x
-    fxy      <- mkApp fx y
-    let body =  mkLam "f" fty $ mkLam "y" betaType $ mkLam "x" alphaType fxy
+    let a    =  mkVar "a" alphaType
+    let b    =  mkVar "b" betaType
+    fa       <- mkApp f a
+    fab      <- mkApp fa b
+    let body =  mkLams [("f", fty), ("b", betaType), ("a", alphaType)] fab
     primitiveNewDefinedConstant name body $ mkFunctionType fty $ mkFunctionType betaType $ mkFunctionType alphaType gammaType
 
   flipC :: Inference Term
@@ -96,10 +98,10 @@ where
     let gty  =  mkFunctionType alphaType betaType
     let f    =  mkVar "f" fty
     let g    =  mkVar "g" gty
-    let x    =  mkVar "x" alphaType
-    gx       <- mkApp g x
-    fgx      <- mkApp f gx
-    let body =  mkLam "f" fty $ mkLam "g" gty $ mkLam "x" alphaType fgx
+    let a    =  mkVar "a" alphaType
+    ga       <- mkApp g a
+    fga      <- mkApp f ga
+    let body =  mkLam "f" fty $ mkLam "g" gty $ mkLam "a" alphaType fga
     primitiveNewDefinedConstant name body $ mkFunctionType fty $ mkFunctionType gty $ mkFunctionType alphaType gammaType
 
   composeC :: Inference Term

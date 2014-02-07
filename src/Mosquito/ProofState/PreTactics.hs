@@ -9,6 +9,7 @@ module Mosquito.ProofState.PreTactics (
   preTacticName, localEdit, mkPreTactic,
   alphaL, alphaP,
   symmetryL, symmetryP,
+  transitivityL, transitivityP,
   abstractL, abstractP,
   combineL, combineP,
   betaL, betaP,
@@ -91,6 +92,21 @@ module Mosquito.ProofState.PreTactics (
     PreTactic {
       _preTacticName = "symmetryP"
     , _localEdit     = symmetryL
+    }
+
+  transitivityL :: Term -> LocalEdit
+  transitivityL middle assms concl = do
+    userMark ["transitivityL:", pretty middle, pretty concl]
+    (l, r) <- fromEquality concl
+    nL     <- mkEquality l middle
+    nR     <- mkEquality middle r
+    return (\[t, t'] -> transitivityR t t', [(assms, nL), (assms, nR)])
+
+  transitivityP :: Term -> PreTactic
+  transitivityP middle =
+    PreTactic {
+      _preTacticName = "transitivityP"
+    , _localEdit     = transitivityL middle
     }
 
   abstractL :: LocalEdit

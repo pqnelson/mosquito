@@ -47,7 +47,7 @@ module Mosquito.Kernel.Term (
   -- ** Type checking
   typeOf,
   -- ** Alpha-equivalence and free variables
-  fv, fvs, permute,
+  fv, fvs, typeVars, permute, fresh,
   -- ** Equality within the logic
   equality, isEquality,
   fromEquality, mkEquality,
@@ -58,9 +58,9 @@ module Mosquito.Kernel.Term (
   -- ** Term substitutions
   termSubst, termTypeSubst,
   -- * HOL theorems
-  Provenance,
+  Provenance(..),
   track,
-  Theorem,
+  Theorem(..),
   hypotheses, conclusion, provenance,
   union, delete, deleteTheorem,
   -- ** Basic HOL theorems
@@ -705,13 +705,16 @@ where
 
   -- |Generates a fresh name.  Argument contains a list of pre-existing names
   --  to avoid.
-  fresh :: S.Set String -> String
-  fresh = go "f" 0
+  fresh :: Maybe String -> S.Set String -> String
+  fresh base = (flip go) 0 $ maybe "f" id base
     where
       go :: String -> Integer -> S.Set String -> String
-      go suggested counter seen
-        | suggested `S.member` seen = go (suggested ++ show counter) (counter + 1) seen
-        | otherwise                 = suggested
+      go suggested counter seen =
+        let suggested' = suggested ++ show counter in
+          if suggested' `S.member` seen then
+            go suggested (counter + 1) seen
+          else
+            suggested'
 
   -- |Performs a capture-avoiding term substitution with fresh-name generation
   --  if necessary.
@@ -732,7 +735,7 @@ where
         S.unions [S.singleton dom, variables rng, substVariables . Substitution $ ss]
 
       freshName :: String
-      freshName = fresh $ S.unions [variables t, substVariables subst]
+      freshName = fresh (Just a)$ S.unions [variables t, substVariables subst]
         
 
   --

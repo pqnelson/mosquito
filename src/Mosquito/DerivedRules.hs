@@ -8,7 +8,8 @@ module Mosquito.DerivedRules (
   -- * Restricted combination rules
   combineLeftR, combineRightR,
   -- * Lambda-abstraction
-  abstractsR
+  abstractsR,
+  proveHypothesisR
 ) where
 
   import Prelude hiding (fail)
