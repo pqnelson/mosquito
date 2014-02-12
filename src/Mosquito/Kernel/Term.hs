@@ -127,7 +127,7 @@ where
         case tag of
           FromKernel -> "  [Kernel call]:" ++ "\t" ++ t
           OutwithKernel -> "[Userspace call]:" ++ "\t" ++ t
-        ) (reverse trace)
+        ) trace
     pretty (Success count t) =
       L.intercalate "\n" [
         unwords["Computation successful in `", show . length . filter (\x -> fst x == FromKernel) $ count, "' primitive inference steps:"]

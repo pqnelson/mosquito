@@ -28,6 +28,8 @@ module Mosquito.ProofState.PreTactics (
 
   import Debug.Trace
 
+  import Mosquito.TermUtilities
+
   import Mosquito.Kernel.Term
 
   import Mosquito.ProofState.Conversionals
@@ -64,13 +66,18 @@ module Mosquito.ProofState.PreTactics (
   alphaL :: LocalEdit
   alphaL assms concl = do
     userMark ["alphaL:", pretty concl]
-    (left, right) <- fromEquality concl
-    if left == right then do
-      return $ (\[] -> alphaR left right, [])
+    if isEquality concl then do
+      (left, right) <- fromEquality concl
+      if left == right then do
+        return $ (\[] -> alphaR left right, [])
+      else
+        fail . unwords $ [
+          "alphaL: left and right side of equality not alpha-equivalent"
+        , unwords ["when testing terms `", pretty left, "'' and `", pretty right, "'."]
+        ]
     else
       fail . unwords $ [
-        "alphaL: left and right side of equality not alpha-equivalent"
-      , unwords ["when testing terms `", pretty left, "'' and `", pretty right, "'."]
+        "alphaL: goal `", pretty concl, "' is not an equality."
       ]
 
   alphaP :: PreTactic
@@ -83,9 +90,14 @@ module Mosquito.ProofState.PreTactics (
   symmetryL :: LocalEdit
   symmetryL assms concl = do
     userMark ["symmetryL:", pretty concl]
-    (l, r) <- fromEquality concl
-    nConcl <- mkEquality r l
-    return $ (\[t] -> symmetryR t, [(assms, nConcl)])
+    if isEquality concl then do
+      (l, r) <- fromEquality concl
+      nConcl <- mkEquality r l
+      return $ (\[t] -> symmetryR t, [(assms, nConcl)])
+    else
+      fail . unwords $ [
+        "symmetryL: goal `", pretty concl, "' is not an equality."
+      ]
 
   symmetryP :: PreTactic
   symmetryP =
@@ -97,10 +109,15 @@ module Mosquito.ProofState.PreTactics (
   transitivityL :: Term -> LocalEdit
   transitivityL middle assms concl = do
     userMark ["transitivityL:", pretty middle, pretty concl]
-    (l, r) <- fromEquality concl
-    nL     <- mkEquality l middle
-    nR     <- mkEquality middle r
-    return (\[t, t'] -> transitivityR t t', [(assms, nL), (assms, nR)])
+    if isEquality concl then do
+      (l, r) <- fromEquality concl
+      nL     <- mkEquality l middle
+      nR     <- mkEquality middle r
+      return (\[t, t'] -> transitivityR t t', [(assms, nL), (assms, nR)])
+    else
+      fail . unwords $ [
+        "transitivityL: goal `", pretty concl, "' is not an equality."
+      ]
 
   transitivityP :: Term -> PreTactic
   transitivityP middle =
@@ -112,16 +129,26 @@ module Mosquito.ProofState.PreTactics (
   abstractL :: LocalEdit
   abstractL assms concl = do
     userMark ["abstractL:", pretty concl]
-    (l, r)             <- fromEquality concl
-    (name,  ty, lBody) <- fromLam l
-    (name', _,  rBody) <- fromLam r
-    if name == name' then do
-      nConcl <- mkEquality lBody rBody
-      return (\[t] -> abstractR name ty t, [(assms, nConcl)])
-    else do
-      let nBody =  permute name name' rBody
-      nConcl    <- mkEquality lBody nBody
-      return (\[t] -> abstractR name ty t, [(assms, nConcl)])
+    if isEquality concl then do
+      (l, r)             <- fromEquality concl
+      if isLam l && isLam r then do
+        (name,  ty, lBody) <- fromLam l
+        (name', _,  rBody) <- fromLam r
+        if name == name' then do
+          nConcl <- mkEquality lBody rBody
+          return (\[t] -> abstractR name ty t, [(assms, nConcl)])
+        else do
+          let nBody =  permute name name' rBody
+          nConcl    <- mkEquality lBody nBody
+          return (\[t] -> abstractR name ty t, [(assms, nConcl)])
+      else
+        fail . unwords $ [
+          "abstractL: goal `", pretty concl, "' must be an equality between lambda-abstractions."
+        ]
+    else
+      fail . unwords $ [
+        "abstractL: goal `", pretty concl, "' is not an equality."
+      ]
 
   abstractP :: PreTactic
   abstractP =
@@ -133,12 +160,22 @@ module Mosquito.ProofState.PreTactics (
   combineL :: LocalEdit
   combineL assms concl = do
     userMark ["combineL:", pretty concl]
-    (left, right)   <- fromEquality concl
-    (leftL, rightL) <- fromApp left
-    (leftR, rightR) <- fromApp right
-    nLeft           <- mkEquality leftL leftR
-    nRight          <- mkEquality rightL rightR
-    return (\[t, t'] -> combineR t t', [(assms, nLeft), (assms, nRight)])
+    if isEquality concl then do
+      (left, right)   <- fromEquality concl
+      if isApp left && isApp right then do
+        (leftL, rightL) <- fromApp left
+        (leftR, rightR) <- fromApp right
+        nLeft           <- mkEquality leftL leftR
+        nRight          <- mkEquality rightL rightR
+        return (\[t, t'] -> combineR t t', [(assms, nLeft), (assms, nRight)])
+      else
+        fail . unwords $ [
+          "combineL: goal `", pretty concl, "' must be an equality between applications."
+        ]
+    else
+      fail . unwords $ [
+        "combineL: goal `", pretty concl, "' must be an equality."
+      ]
 
   combineP :: PreTactic
   combineP =
@@ -150,9 +187,19 @@ module Mosquito.ProofState.PreTactics (
   etaL :: LocalEdit
   etaL _ concl = do
     userMark ["etaL:", pretty concl]
-    (left, _) <- fromEquality concl
-    --- XXX: test here
-    return $ (\[] -> etaR left, [])
+    if isEquality concl then do
+      (left, right) <- fromEquality concl
+      if isEtaContractum left right then
+        return $ (\[] -> etaR left, [])
+      else
+        fail . unwords $ [
+          "etaL: goal `", pretty concl, "' must be an equality between an eta redex"
+        , "and its contractum."
+        ]
+    else
+      fail . unwords $ [
+        "etaL: goal `", pretty concl, "' must be an equality."
+      ]
 
   etaP :: PreTactic
   etaP =
@@ -171,14 +218,18 @@ module Mosquito.ProofState.PreTactics (
   betaL :: LocalEdit
   betaL _ concl = do
     userMark ["betaL:", pretty concl]
-    (left, right) <- fromEquality concl
-    reduced       <- betaReduce left
-    if reduced == right then
-      return $ (\[] -> betaR left, [])
+    if isEquality concl then do
+      (left, right) <- fromEquality concl
+      if isBetaContractum left right then
+        return $ (\[] -> betaR left, [])
+      else
+        fail . unwords $ [
+          unwords ["betaL: goal `", pretty concl, "' must be an equality between a"]
+        , "beta redex and its contractum."
+        ]
     else
       fail . unwords $ [
-        unwords ["betaL: beta reduced left hand side `", pretty reduced, "' is"]
-      , unwords ["not alpha-equivalent to right hand side `", pretty right, "'."]
+        "betaL: goal `", pretty concl, "' must be an equality."
       ]
 
   betaP :: PreTactic

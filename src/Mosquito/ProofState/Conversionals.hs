@@ -135,8 +135,7 @@ where
   unfoldConstantConv :: Theorem -> Conversion
   unfoldConstantConv thm term =
     if isConst term then do
-      thm' <- freshenTypesR thm
-      (left, right) <- fromEquality . conclusion $ thm'
+      (left, right) <- trace ("UUU: " ++ pretty thm ++ ", " ++ pretty term) fromEquality . conclusion $ thm
       if left == term then do
         typT <- typeOf term
         typR <- typeOf right
@@ -144,7 +143,7 @@ where
         --      we need to completely freshen the type variables in the theorem
         --      before we unify against the constant, before instantiating
         unif <- unifyTypes typT typR
-        thm  <- typeInstantiationR unif thm'
+        thm  <- typeInstantiationR unif thm
         return thm
       else
         successConv term

@@ -187,21 +187,7 @@ module Mosquito.Theories.Boolean {- (
   fromForall term = do
     (forallC, body) <- fromApp term
     fromLam body
-{-
-let SPEC =
-  let P = `P:A->bool`
-  and x = `x:A` in
-  let pth =
-    let th1 = EQ_MP(AP_THM FORALL_DEF `P:A->bool`) (ASSUME `(!)(P:A->bool)`) in
-    let th2 = AP_THM (CONV_RULE BETA_CONV th1) `x:A` in
-    let th3 = CONV_RULE (RAND_CONV BETA_CONV) th2 in
-    DISCH_ALL (EQT_ELIM th3) in
-  fun tm th ->
-    try let abs = rand(concl th) in
-        CONV_RULE BETA_CONV
-         (MP (PINST [snd(dest_var(bndvar abs)),aty] [abs,P; tm,x] pth) th)
-    with Failure _ -> failwith "SPEC";;
--}
+
   forallEliminationR :: Term -> Theorem -> Inference Theorem
   forallEliminationR trm thm = do
     forallC  <- forallC
@@ -217,9 +203,6 @@ let SPEC =
     conv''   <- conversionR (combineRConv betaR) conv'
     trueE    <- trueEqualityEliminationR conv''
     return trueE
-
-  test = Mosquito.Utility.Pretty.putStrLn $ do
-    forallEliminationR undefined undefined
 
   --
   -- ** Logical falsity
@@ -245,6 +228,7 @@ let SPEC =
   -- ** Conjunction
   --
 
+  -- |The declaration of the conjunction constant.
   conjunctionDeclaration :: Inference (Term, Theorem)
   conjunctionDeclaration = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "_∧_"
@@ -260,24 +244,29 @@ let SPEC =
     let def   =  mkLam "p" boolType (mkLam "q" boolType eq)
     primitiveNewDefinedConstant name def binaryConnectiveType
 
+  -- |The conjunction constant.
   conjunctionC :: Inference Term
   conjunctionC = constantOfDecl conjunctionDeclaration
 
+  -- |The conjunction defining theorem.
   conjunctionD :: Inference Theorem
   conjunctionD = theoremOfDecl conjunctionDeclaration
 
+  -- |Makes a conjunction from two terms.
   mkConjunction :: Term -> Term -> Inference Term
   mkConjunction left right = do
     conjunctionC <- conjunctionC
     pre          <- mkApp conjunctionC left
     mkApp pre right
 
+  -- |Destructs a conjunction.
   fromConjunction :: Term -> Inference (Term, Term)
   fromConjunction term = do
     (pre, right)  <- fromApp term
     (conjC, left) <- fromApp pre
     return (left, right)
 
+  -- |Conjunction introduction rule.
   conjunctionIntroductionR :: Theorem -> Theorem -> Inference Theorem
   conjunctionIntroductionR left right = do
     conjD  <- conjunctionD
@@ -298,14 +287,19 @@ let SPEC =
     q      <- proveHypothesisR right p
     return q
 
+  -- |Conjunction introduction local edit.  Transforms goals of the form @Gamma |- P /\ Q@
+  --  into goals @Gamma |- P@ and @Gamma |- Q@.
   conjunctionIntroductionL :: LocalEdit
   conjunctionIntroductionL assms concl = do
+    userMark ["conjunctionIntroductionL", pretty concl]
     (left, right) <- fromConjunction concl
     return (\[left, right] -> conjunctionIntroductionR left right, [(assms, left), (assms, right)])
 
+  -- |Conjunction introduction pretactic.
   conjunctionIntroductionP :: PreTactic
   conjunctionIntroductionP = mkPreTactic "conjunctionIntroductionP" conjunctionIntroductionL
 
+  -- |Conjunction elimination 1 rule.
   conjunctionElimination1R :: Theorem -> Inference Theorem
   conjunctionElimination1R thm = do
     let x         =  mkVar "x" boolType
@@ -326,14 +320,18 @@ let SPEC =
     p             <- proveHypothesisR thm trueE
     return p
 
+  -- |Conjunction elimination 1 local edit.  Transforms goals of the form @Gamma |- P@
+  --  into goals of the form @Gamma |- P /\ Q@.
   conjunctionElimination1L :: Term -> LocalEdit
   conjunctionElimination1L trm assms concl = do
     conj <- mkConjunction trm concl
     return (\[t] -> conjunctionElimination1R t, [(assms, conj)])
 
+  -- |Conjunction elimination 1 pretactic.
   conjunctionElimination1P :: Term -> PreTactic
   conjunctionElimination1P = mkPreTactic "conjunctionElimination1P" . conjunctionElimination1L
 
+  -- |Conjunction elimination 2 rule.
   conjunctionElimination2R :: Theorem -> Inference Theorem
   conjunctionElimination2R thm = do
     let x         =  mkVar "x" boolType
@@ -354,11 +352,14 @@ let SPEC =
     p             <- proveHypothesisR thm trueE
     return p
 
+  -- |Conjunction elimination 2 local edit.  Transforms goals of the form @Gamma |- Q@
+  --  into goals of the form @Gamma |- P /\ Q@.
   conjunctionElimination2L :: Term -> LocalEdit
   conjunctionElimination2L trm assms concl = do
     conj <- mkConjunction concl trm
     return (\[t] -> conjunctionElimination2R t, [(assms, conj)])
 
+  -- |Conjunction elimination 2 pretactic.
   conjunctionElimination2P :: Term -> PreTactic
   conjunctionElimination2P = mkPreTactic "conjunctionElimination2P" . conjunctionElimination2L
 
@@ -392,12 +393,26 @@ let SPEC =
     pre          <- mkApp implicationC left
     mkApp pre right
 
+  -- |Destructs an implication.
   fromImplication :: Term -> Inference (Term, Term)
   fromImplication term = do
-    (pre, right) <- fromApp term
-    (impC, left) <- fromApp pre
-    return (left, right)
+    impC          <- implicationC
+    (pre, right)  <- fromApp term
+    (impC', left) <- fromApp pre
+    if impC == impC' then
+      return (left, right)
+    else
+      fail . unwords $ [
+        "fromImplication: term `", pretty term, "' is not an implication."
+      ]
 
+  isImplication :: Term -> Bool
+  isImplication trm = do
+    inference (fromImplication trm)
+      (const True)
+      (const False)
+
+  -- |Implication elimination (modus ponens) rule.
   implicationEliminationR :: Theorem -> Theorem -> Inference Theorem
   implicationEliminationR left right = do
     (hyp, conc) <- fromImplication . conclusion $ left
@@ -422,26 +437,18 @@ let SPEC =
       , unwords ["not match conclusion of right hand theorem `", pretty right, "'."]
       ]
 
+  -- |Implication elimination (modus ponens) local edit.  Transforms goals of the form
+  --  @Gamma |- Q@ into goals @Gamma |- P ==> Q@ and @Gamma |- P@.
   implicationEliminationL :: Term -> LocalEdit
   implicationEliminationL trm assms concl = do
     imp <- mkImplication trm concl
     return (\[left, right] -> implicationEliminationR left right, [(assms, imp), (assms, trm)])
 
+  -- |Implication elimination (modus ponens) pretactic.
   implicationEliminationP :: Term -> PreTactic
   implicationEliminationP = mkPreTactic "implicationEliminationP" . implicationEliminationL
 
-{-
-let DISCH =
-  let p = `p:bool`
-  and q = `q:bool` in
-  let pth = SYM(BETA_RULE (AP_THM (AP_THM IMP_DEF p) q)) in
-  fun a th ->
-    let th1 = CONJ (ASSUME a) th in
-    let th2 = CONJUNCT1 (ASSUME (concl th1)) in
-    let th3 = DEDUCT_ANTISYM_RULE th1 th2 in
-    let th4 = INST [a,p; concl th,q] pth in
-    EQ_MP th4 th3;;
--}
+  -- |Implication introduction rule.
   implicationIntroductionR :: Term -> Theorem -> Inference Theorem
   implicationIntroductionR trm thm = do
     impD <- implicationD
@@ -457,11 +464,15 @@ let DISCH =
     eqmp  <- equalityModusPonensR symm das
     return eqmp
 
+  -- |Implication introduction local edit.  Transforms goals of the form
+  --  @Gamma |- P ==> Q@ in to goals of the form @Gamma, P |- Q@.
   implicationIntroductionL :: LocalEdit
   implicationIntroductionL assms concl = do
+    userMark ["implicationIntroductionL:", pretty concl]
     (left, right) <- fromImplication concl
     return (\[t] -> implicationIntroductionR left t, [(left:assms, right)])
 
+  -- |Implication introduction pretactic.
   implicationIntroductionP :: PreTactic
   implicationIntroductionP = mkPreTactic "implicationIntroductionP" implicationIntroductionL
 
@@ -493,10 +504,78 @@ let DISCH =
     negationC <- negationC
     mkApp negationC body
 
+  -- |Destructs a negation.
   fromNegation :: Term -> Inference Term
   fromNegation term = do
-    (negC, body) <- fromApp term
-    return body
+    negC <- negationC
+    (negC', body) <- fromApp term
+    if negC == negC' then
+      return body
+    else
+      fail . unwords $ [
+        "fromNegation: term `", pretty term, "' is not a negation."
+      ]
+
+  -- |Tests whether a term is a negation.
+  isNegation :: Term -> Bool
+  isNegation trm =
+    inference (fromNegation trm)
+      (const False)
+      (const True)
+
+  negationIntroductionR :: Theorem -> Inference Theorem
+  negationIntroductionR thm = do
+    negD         <- negationD
+    (hyp, concl) <- fromImplication . conclusion $ thm
+    concNegD     <- combineLeftR hyp negD
+    conv         <- conversionR (replaceEverywhereConv . tryConv $ betaR) concNegD
+    symm         <- symmetryR conv
+    eqmp         <- equalityModusPonensR symm thm
+    return eqmp
+
+  negationIntroductionL :: LocalEdit
+  negationIntroductionL assms concl = do
+    if isNegation concl then do
+      term   <- fromNegation concl
+      falseC <- falseC
+      imp    <- mkImplication term falseC
+      return (\[t] -> negationIntroductionR t, [(assms, imp)])
+    else
+      fail . unwords $ [
+        "negationIntroductionL: goal `", pretty concl, "' is not a negation."
+      ]
+
+  negationIntroductionP :: PreTactic
+  negationIntroductionP = mkPreTactic "negationIntroductionP" negationIntroductionL
+
+  negationEliminationR :: Theorem -> Inference Theorem
+  negationEliminationR thm = do
+    negationD <- negationD
+    body      <- fromNegation . conclusion $ thm
+    comb      <- combineLeftR body negationD
+    conv      <- conversionR (replaceEverywhereConv . tryConv $ betaR) comb
+    eqmp      <- equalityModusPonensR conv thm
+    return eqmp
+
+  negationEliminationL :: LocalEdit
+  negationEliminationL assms concl = do
+    if isImplication concl then do
+      falseC      <- falseC
+      (hyp, conc) <- fromImplication concl
+      if falseC == conc then do
+        neg <- mkNegation hyp
+        return (\[t] -> negationEliminationR t, [(assms, neg)])
+      else
+        fail . unwords $ [
+          "negationEliminationL: conclusion of goal `", pretty concl, "' is not false."
+        ]
+    else
+      fail . unwords $ [
+        "negationEliminationL: goal `", pretty concl, "' is not an implication."
+      ]
+
+  negationEliminationP :: PreTactic
+  negationEliminationP = mkPreTactic "negationEliminationP" negationEliminationL
 
   --
   -- ** Disjunction
@@ -670,7 +749,7 @@ let DISCH =
     let t = mkVar "t" alphaType
     eq    <- mkEquality t t
     conj  <- mkForall "t" alphaType eq
-    prf   <- mkConjecture "reflexivityThm" conj
+    prf   <- mkConjecture "reflexivity" conj
     prf   <- act prf . Apply $ unfoldConstantP forallD
     prf   <- act prf . Apply $ betaReduceP
     prf   <- act prf . Apply $ abstractP
@@ -780,6 +859,24 @@ let DISCH =
   --
   -- ** General natural deduction
   --
+
+  -- |Produces a derivation of @{} |- forall t. t /\ true ==> t@.
+  conjunctionTrue1T = Mosquito.Utility.Pretty.putStrLn $ do
+    trueC   <- trueC
+    forallD <- forallD
+    let t   =  mkVar "t" boolType
+    tTrue   <- mkConjunction t trueC
+    body    <- mkImplication tTrue t
+    conj    <- mkForall "t" boolType body
+    prf     <- mkConjecture "conjunctionTrue1" conj
+    prf     <- act prf . Apply $ unfoldConstantP forallD
+    prf     <- act prf . Apply $ betaReduceP
+    prf     <- act prf . Apply $ abstractP
+    prf     <- act prf . Apply $ trueEqualityIntroductionP
+    prf     <- act prf . Apply $ implicationIntroductionP
+    prf     <- act prf . Apply $ conjunctionElimination2P trueC
+    prf     <- act prf . Apply $ assumeP
+    qed prf
 
 
 

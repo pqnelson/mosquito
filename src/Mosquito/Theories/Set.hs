@@ -31,4 +31,5 @@ where
     conj    <- mkExists "s" setType body
     prf     <- mkConjecture "setTypeExistsT" conj
     prf     <- act prf . Apply $ unfoldConstantP existsD
+    -- XXX: bug in constant unfolding
     return prf

@@ -5,6 +5,8 @@
 module Mosquito.TermUtilities (
   -- * Utility functions
   partialFromSuccess, freshs,
+  -- * Useful syntactic tests
+  isEtaContractum, isBetaContractum,
   -- * Useful deconstruction functions
   fromBinaryOperation,
   -- * Useful construction funtions
@@ -44,6 +46,30 @@ where
     let name   = fresh base seen in
     let others = freshs (n - 1) base (S.insert name seen) in
       name:others
+
+  --
+  -- * More useful syntactic tests
+  --
+
+  isEtaContractum :: Term -> Term -> Bool
+  isEtaContractum (termView->(LamView name ty body)) right =
+    case termView body of
+      AppView left right' ->
+        case termView right' of
+          VarView name' _ -> name == name' && not (name `S.member` fv left)
+          _               -> False
+      _                   -> False
+  isEtaContractum _                                 _      = False
+
+  isBetaContractum :: Term -> Term -> Bool
+  isBetaContractum (termView->(AppView left right)) right' =
+    case termView left of
+      LamView name ty body ->
+        let subst = mkSubstitution [(name, right')] in
+        let body' = termSubst subst body in
+          body' == right
+      _                    -> False
+  isBetaContractum _                                _      = False
 
   --
   -- * More useful construction functions
