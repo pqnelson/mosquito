@@ -54,43 +54,51 @@ module Mosquito.Theories.Boolean {- (
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics
 
+  import Mosquito.Theories.Theory
   import Mosquito.Theories.Utility
 
   import Mosquito.Utility.Extlib
   import Mosquito.Utility.Pretty
 
   --
+  -- ** Boolean theory
+  --
+
+  boolTheoryName :: QualifiedName
+  boolTheoryName = mkQualifiedName ["Mosquito"] "Boolean"
+
+  boolTheory :: Theory
+  boolTheory =
+    newTheory [primitiveHOL] boolTheoryName
+
+
+  --
   -- ** Logical truth
   --
 
-  -- T = \a : Bool. a = \a : Bool. a
-  trueDeclaration :: Inference (Term, Theorem)
-  trueDeclaration = do
-    let name =  mkQualifiedName ["Mosquito", "Bool"] "true"
+  trueTheory :: Inference Theory
+  trueTheory = do
     let t    =  mkLam "a" boolType $ mkVar "a" boolType
     eq       <- mkEquality t t
-    primitiveNewDefinedConstant name eq boolType
-
-  trueC :: Inference Term
-  trueC = constantOfDecl trueDeclaration
-
-  trueD :: Inference Theorem
-  trueD = theoremOfDecl trueDeclaration
+    registerNewDefinition boolTheory "true" eq boolType
 
   -- |Produces a derivation of @{} ⊢ true@.
   trueIntroductionT :: Inference Theorem
   trueIntroductionT = do
-    trueC <- trueC
-    trueD <- trueD
+    thy   <- trueTheory
+    trueC <- getConstantCurrent thy "true"
+    trueD <- getTheoremCurrent thy "trueD"
     conj  <- mkConjecture "trueIntroduction" trueC
     conj  <- act conj $ Apply (unfoldConstantP trueD)
     conj  <- act conj $ Apply alphaP
     qed conj
 
+  -- |Solves goals of the form @Gamma |- true@.
   trueIntroductionL :: LocalEdit
   trueIntroductionL _ concl = do
     userMark ["trueIntroductionL:", pretty concl]
-    trueC <- trueC
+    thy   <- trueTheory
+    trueC <- getConstantCurrent thy "true"
     if concl == trueC then
       return (\[] -> trueIntroductionT, [])
     else
@@ -113,7 +121,8 @@ module Mosquito.Theories.Boolean {- (
   trueEqualityEliminationL :: LocalEdit
   trueEqualityEliminationL assms concl = do
     userMark ["trueEqualityEliminationL:", pretty concl]
-    trueC <- trueC
+    thy   <- trueTheory
+    trueC <- getConstantCurrent thy "true"
     eq <- mkEquality concl trueC
     return (\[t] -> trueEqualityEliminationR t, [(assms, eq)])
 
@@ -138,7 +147,8 @@ module Mosquito.Theories.Boolean {- (
   trueEqualityIntroductionL :: LocalEdit
   trueEqualityIntroductionL assms concl = do
     userMark ["trueEqualityIntroductionL:", pretty concl]
-    trueC <- trueC
+    thy   <- trueTheory
+    trueC <- getConstantCurrent thy "true"
     (left, right) <- fromEquality concl
     if right == trueC then do
       return $ (\[t] -> trueEqualityIntroductionR t, [(assms, left)])
@@ -152,6 +162,7 @@ module Mosquito.Theories.Boolean {- (
   -- ** Universal quantification
   --
 
+{-
   forallDeclaration :: Inference (Term, Theorem)
   forallDeclaration = do
     let name  =  mkQualifiedName ["Mosquito", "Bool"] "∀"
@@ -980,5 +991,6 @@ module Mosquito.Theories.Boolean {- (
     --prf    <- act prf . Try $ Apply symmetryPreTactic >=> Apply assumePreTactic
     --prf    <- act prf . Apply $ trueEqEPreTactic
     return prf
+-}
 -}
 -}

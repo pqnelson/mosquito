@@ -1136,8 +1136,8 @@ where
     (variable, repType) <- fromVar variable
     if hypotheses theorem == [] then
       if fv p == S.empty then do
-        let absName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Abstraction"
-        let repName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Representation"
+        let absName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Abs"
+        let repName  =  mkQualifiedName (qualifiedNamePath name) $ qualifiedNameHead name ++ "Rep"
         let tyVars   =  S.toAscList . typeVars $ p
         let arity    =  length tyVars
         let dt       =  DefinedTypeOperator name arity theorem
