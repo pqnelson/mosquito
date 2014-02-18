@@ -67,8 +67,8 @@ module Mosquito.Theories.Boolean {- (
   boolTheoryName :: QualifiedName
   boolTheoryName = mkQualifiedName ["Mosquito"] "Boolean"
 
-  boolTheory :: Theory
-  boolTheory =
+  initTheory :: Theory
+  initTheory =
     newTheory [primitiveHOL] boolTheoryName
 
 
@@ -80,7 +80,7 @@ module Mosquito.Theories.Boolean {- (
   trueTheory = do
     let t    =  mkLam "a" boolType $ mkVar "a" boolType
     eq       <- mkEquality t t
-    registerNewDefinition boolTheory "true" eq boolType
+    registerNewDefinition initTheory "true" eq boolType
 
   -- |Produces a derivation of @{} ⊢ true@.
   trueIntroductionT :: Inference Theorem
@@ -162,26 +162,20 @@ module Mosquito.Theories.Boolean {- (
   -- ** Universal quantification
   --
 
-{-
-  forallDeclaration :: Inference (Term, Theorem)
-  forallDeclaration = do
-    let name  =  mkQualifiedName ["Mosquito", "Bool"] "∀"
-    trueC     <- trueC
+  forallTheory :: Inference Theory
+  forallTheory = do
+    thy       <- trueTheory
+    trueC     <- getConstantCurrent thy "true"
     let right =  mkLam "a" alphaType trueC
     let left  =  mkVar "P" (mkFunctionType alphaType boolType)
     eq        <- mkEquality left right
     let def   =  mkLam "P" (mkFunctionType alphaType boolType) eq
-    primitiveNewDefinedConstant name def quantifierType
-
-  forallC :: Inference Term
-  forallC = constantOfDecl forallDeclaration
-
-  forallD :: Inference Theorem
-  forallD = theoremOfDecl forallDeclaration
+    registerNewDefinition thy "forall" def quantifierType
 
   mkForall :: String -> Type -> Term -> Inference Term
   mkForall name ty body = do
-    forallC  <- forallC
+    thy      <- forallTheory
+    forallC  <- getConstantCurrent thy "forall"
     let subst = mkSubstitution [("α", ty)]
     let inst =  termTypeSubst subst forallC
     let lam  =  mkLam name ty body
@@ -196,13 +190,21 @@ module Mosquito.Theories.Boolean {- (
 
   fromForall :: Term -> Inference (String, Type, Term)
   fromForall term = do
-    (forallC, body) <- fromApp term
-    fromLam body
+    thy              <- forallTheory
+    forallC          <- getConstantCurrent thy "forall"
+    (forallC', body) <- fromApp term
+    if forallC == forallC' then
+      fromLam body
+    else
+      fail . unwords $ [
+        "fromForall: term `", pretty term, "' is not a universal quantification."
+      ]
 
   forallEliminationR :: Term -> Theorem -> Inference Theorem
   forallEliminationR trm thm = do
-    forallC  <- forallC
-    forallD  <- forallD
+    thy      <- forallTheory
+    forallC  <- getConstantCurrent thy "forall"
+    forallD  <- getTheoremCurrent thy "forallD"
     let x    =  mkVar "x" alphaType
     let p    =  mkVar "P" (mkFunctionType alphaType boolType)
     allP     <- mkApp forallC p
@@ -219,32 +221,26 @@ module Mosquito.Theories.Boolean {- (
   -- ** Logical falsity
   --
 
-  falseDeclaration :: Inference (Term, Theorem)
-  falseDeclaration = do
-    let name =  mkQualifiedName ["Mosquito", "Bool"] "false"
-    forallC  <- forallC
+  falseTheory :: Inference Theory
+  falseTheory = do
+    thy      <- forallTheory
+    forallC  <- getConstantCurrent thy "forall"
     let subst = mkSubstitution [("α", boolType)]
     let inst =  termTypeSubst subst forallC
     let body =  mkLam "a" boolType (mkVar "a" boolType)
     def      <- mkApp inst body
-    primitiveNewDefinedConstant name def boolType
-
-  falseC :: Inference Term
-  falseC = constantOfDecl falseDeclaration
-
-  falseD :: Inference Theorem
-  falseD = theoremOfDecl falseDeclaration
+    registerNewDefinition thy "false" def boolType
 
   --
   -- ** Conjunction
   --
 
   -- |The declaration of the conjunction constant.
-  conjunctionDeclaration :: Inference (Term, Theorem)
-  conjunctionDeclaration = do
-    let name  =  mkQualifiedName ["Mosquito", "Bool"] "_∧_"
+  conjunctionTheory :: Inference Theory
+  conjunctionTheory = do
+    thy       <- falseTheory
     let f     =  mkVar "f" binaryConnectiveType
-    trueC     <- trueC
+    trueC     <- getConstantCurrent thy "true"
     rightB    <- mkApp f trueC
     rightB    <- mkApp rightB trueC
     let right =  mkLam "f" binaryConnectiveType rightB
@@ -253,34 +249,41 @@ module Mosquito.Theories.Boolean {- (
     let left  =  mkLam "f" binaryConnectiveType leftB
     eq        <- mkEquality left right
     let def   =  mkLam "p" boolType (mkLam "q" boolType eq)
-    primitiveNewDefinedConstant name def binaryConnectiveType
-
-  -- |The conjunction constant.
-  conjunctionC :: Inference Term
-  conjunctionC = constantOfDecl conjunctionDeclaration
-
-  -- |The conjunction defining theorem.
-  conjunctionD :: Inference Theorem
-  conjunctionD = theoremOfDecl conjunctionDeclaration
+    registerNewDefinition thy "conjunction" def binaryConnectiveType
 
   -- |Makes a conjunction from two terms.
   mkConjunction :: Term -> Term -> Inference Term
   mkConjunction left right = do
-    conjunctionC <- conjunctionC
+    thy          <- conjunctionTheory
+    conjunctionC <- getConstantCurrent thy "conjunction"
     pre          <- mkApp conjunctionC left
     mkApp pre right
 
   -- |Destructs a conjunction.
   fromConjunction :: Term -> Inference (Term, Term)
   fromConjunction term = do
+    thy           <- conjunctionTheory
+    conjC'        <- getConstantCurrent thy "conjunction"
     (pre, right)  <- fromApp term
     (conjC, left) <- fromApp pre
-    return (left, right)
+    if conjC' == conjC then
+      return (left, right)
+    else
+      fail . unwords $ [
+        "fromConjunction: term `", pretty term, "' is not a conjunction."
+      ]
+
+  isConjunction :: Term -> Bool
+  isConjunction trm =
+    inference (fromConjunction trm)
+      (const False)
+      (const True)
 
   -- |Conjunction introduction rule.
   conjunctionIntroductionR :: Theorem -> Theorem -> Inference Theorem
   conjunctionIntroductionR left right = do
-    conjD  <- conjunctionD
+    thy    <- conjunctionTheory
+    conjD  <- getTheoremCurrent thy "conjunctionD"
     let f  =  mkVar "f" binaryConnectiveType
     assmL  <- assumeR . conclusion $ left
     assmR  <- assumeR . conclusion $ right
@@ -303,8 +306,13 @@ module Mosquito.Theories.Boolean {- (
   conjunctionIntroductionL :: LocalEdit
   conjunctionIntroductionL assms concl = do
     userMark ["conjunctionIntroductionL", pretty concl]
-    (left, right) <- fromConjunction concl
-    return (\[left, right] -> conjunctionIntroductionR left right, [(assms, left), (assms, right)])
+    if isConjunction concl then do
+      (left, right) <- fromConjunction concl
+      return (\[left, right] -> conjunctionIntroductionR left right, [(assms, left), (assms, right)])
+    else
+      fail . unwords $ [
+        "conjunctionIntroductionL: goal `", pretty concl, "' is not a conjunction."
+      ]
 
   -- |Conjunction introduction pretactic.
   conjunctionIntroductionP :: PreTactic
@@ -313,11 +321,12 @@ module Mosquito.Theories.Boolean {- (
   -- |Conjunction elimination 1 rule.
   conjunctionElimination1R :: Theorem -> Inference Theorem
   conjunctionElimination1R thm = do
+    thy           <- conjunctionTheory
+    conjD         <- getTheoremCurrent thy "conjunctionD"
     let x         =  mkVar "x" boolType
     let y         =  mkVar "y" boolType
     let term      =  mkLams [("x", boolType), ("y", boolType)] x
     (left, right) <- fromConjunction . conclusion $ thm
-    conjD         <- conjunctionD
     leftC         <- combineLeftR left conjD
     leftC'        <- conversionR (combineRConv betaR) leftC
     rightC        <- combineLeftR right leftC'
@@ -345,11 +354,12 @@ module Mosquito.Theories.Boolean {- (
   -- |Conjunction elimination 2 rule.
   conjunctionElimination2R :: Theorem -> Inference Theorem
   conjunctionElimination2R thm = do
+    thy           <- conjunctionTheory
+    conjD         <- getTheoremCurrent thy "conjunctionD"
     let x         =  mkVar "x" boolType
     let y         =  mkVar "y" boolType
     let term      =  mkLams [("x", boolType), ("y", boolType)] y
     (left, right) <- fromConjunction . conclusion $ thm
-    conjD         <- conjunctionD
     leftC         <- combineLeftR left conjD
     leftC'        <- conversionR (combineRConv betaR) leftC
     rightC        <- combineLeftR right leftC'
@@ -379,35 +389,29 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of material implication.
-  implicationDeclaration :: Inference (Term, Theorem)
-  implicationDeclaration = do
-    let name    =  mkQualifiedName ["Mosquito", "Bool"] "_⇒_"
+  implicationTheory :: Inference Theory
+  implicationTheory = do
+    thy         <- conjunctionTheory
     let p       =  mkVar "p" boolType
     let q       =  mkVar "q" boolType
     conjunction <- mkConjunction p q
     eq          <- mkEquality conjunction p
     let def     =  mkLam "p" boolType . mkLam "q" boolType $ eq
-    primitiveNewDefinedConstant name def binaryConnectiveType
-
-  -- |The implication constant.
-  implicationC :: Inference Term
-  implicationC = constantOfDecl implicationDeclaration
-
-  -- |The implication defining theorem.
-  implicationD :: Inference Theorem
-  implicationD = theoremOfDecl implicationDeclaration
+    registerNewDefinition thy "implication" def binaryConnectiveType
 
   -- |Makes an implication from two boolean-typed terms.
   mkImplication :: Term -> Term -> Inference Term
   mkImplication left right = do
-    implicationC <- implicationC
+    thy          <- implicationTheory
+    implicationC <- getConstantCurrent thy "implication"
     pre          <- mkApp implicationC left
     mkApp pre right
 
   -- |Destructs an implication.
   fromImplication :: Term -> Inference (Term, Term)
   fromImplication term = do
-    impC          <- implicationC
+    thy           <- implicationTheory
+    impC          <- getConstantCurrent thy "implication"
     (pre, right)  <- fromApp term
     (impC', left) <- fromApp pre
     if impC == impC' then
@@ -426,10 +430,11 @@ module Mosquito.Theories.Boolean {- (
   -- |Implication elimination (modus ponens) rule.
   implicationEliminationR :: Theorem -> Theorem -> Inference Theorem
   implicationEliminationR left right = do
+    thy         <- implicationTheory
+    impD        <- getTheoremCurrent thy "implicationD"
     (hyp, conc) <- fromImplication . conclusion $ left
     if hyp == conclusion right then do
       imp   <- mkImplication hyp conc
-      impD  <- implicationD
       impL  <- combineLeftR hyp impD
       impR  <- combineLeftR conc impL
       beta  <- conversionR (replaceEverywhereConv . tryConv $ betaR) impR
@@ -462,8 +467,9 @@ module Mosquito.Theories.Boolean {- (
   -- |Implication introduction rule.
   implicationIntroductionR :: Term -> Theorem -> Inference Theorem
   implicationIntroductionR trm thm = do
-    impD <- implicationD
-    impT <- combineLeftR trm impD
+    thy   <- implicationTheory
+    impD  <- getTheoremCurrent thy "implicationD"
+    impT  <- combineLeftR trm impD
     impT' <- combineLeftR (conclusion thm) impT
     beta  <- conversionR (replaceEverywhereConv . tryConv $ betaR) impT'
     symm  <- symmetryR beta
@@ -480,8 +486,13 @@ module Mosquito.Theories.Boolean {- (
   implicationIntroductionL :: LocalEdit
   implicationIntroductionL assms concl = do
     userMark ["implicationIntroductionL:", pretty concl]
-    (left, right) <- fromImplication concl
-    return (\[t] -> implicationIntroductionR left t, [(left:assms, right)])
+    if isImplication concl then do
+      (left, right) <- fromImplication concl
+      return (\[t] -> implicationIntroductionR left t, [(left:assms, right)])
+    else
+      fail . unwords $ [
+        "implicationIntroductionL: goal `", pretty concl, "is not an implication."
+      ]
 
   -- |Implication introduction pretactic.
   implicationIntroductionP :: PreTactic
@@ -492,33 +503,27 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of the negation constant.
-  negationDeclaration :: Inference (Term, Theorem)
-  negationDeclaration = do
-    let name    =  mkQualifiedName ["Mosquito", "Bool"] "¬"
+  negationTheory :: Inference Theory
+  negationTheory = do
+    thy         <- implicationTheory
+    falseC      <- getConstantCurrent thy "false"
     let a       =  mkVar "a" boolType
-    falseC      <- falseC
     implication <- mkImplication a falseC
     let def     =  mkLam "a" boolType implication
-    primitiveNewDefinedConstant name def $ mkFunctionType boolType boolType
-
-  -- |The negation constant.
-  negationC :: Inference Term
-  negationC = constantOfDecl negationDeclaration
-
-  -- |The negation defining theorem.
-  negationD :: Inference Theorem
-  negationD = theoremOfDecl negationDeclaration
+    registerNewDefinition thy "negation" def (mkFunctionType boolType boolType)
 
   -- |Makes a negation from a boolean-typed term.
   mkNegation :: Term -> Inference Term
   mkNegation body = do
-    negationC <- negationC
+    thy       <- negationTheory
+    negationC <- getConstantCurrent thy "negation"
     mkApp negationC body
 
   -- |Destructs a negation.
   fromNegation :: Term -> Inference Term
   fromNegation term = do
-    negC <- negationC
+    thy  <- negationTheory
+    negC <- getConstantCurrent thy "negation"
     (negC', body) <- fromApp term
     if negC == negC' then
       return body
@@ -536,7 +541,8 @@ module Mosquito.Theories.Boolean {- (
 
   negationIntroductionR :: Theorem -> Inference Theorem
   negationIntroductionR thm = do
-    negD         <- negationD
+    thy          <- negationTheory
+    negD         <- getTheoremCurrent thy "negationD"
     (hyp, concl) <- fromImplication . conclusion $ thm
     concNegD     <- combineLeftR hyp negD
     conv         <- conversionR (replaceEverywhereConv . tryConv $ betaR) concNegD
@@ -547,8 +553,9 @@ module Mosquito.Theories.Boolean {- (
   negationIntroductionL :: LocalEdit
   negationIntroductionL assms concl = do
     if isNegation concl then do
+      thy    <- negationTheory
+      falseC <- getConstantCurrent thy "false"
       term   <- fromNegation concl
-      falseC <- falseC
       imp    <- mkImplication term falseC
       return (\[t] -> negationIntroductionR t, [(assms, imp)])
     else
@@ -561,7 +568,8 @@ module Mosquito.Theories.Boolean {- (
 
   negationEliminationR :: Theorem -> Inference Theorem
   negationEliminationR thm = do
-    negationD <- negationD
+    thy       <- negationTheory
+    negationD <- getTheoremCurrent thy "negationD"
     body      <- fromNegation . conclusion $ thm
     comb      <- combineLeftR body negationD
     conv      <- conversionR (replaceEverywhereConv . tryConv $ betaR) comb
@@ -571,7 +579,8 @@ module Mosquito.Theories.Boolean {- (
   negationEliminationL :: LocalEdit
   negationEliminationL assms concl = do
     if isImplication concl then do
-      falseC      <- falseC
+      thy         <- negationTheory
+      falseC      <- getConstantCurrent thy "false"
       (hyp, conc) <- fromImplication concl
       if falseC == conc then do
         neg <- mkNegation hyp
@@ -593,74 +602,65 @@ module Mosquito.Theories.Boolean {- (
   --
 
   -- |The declaration and definition of disjunction.
-  disjunctionDeclaration :: Inference (Term, Theorem)
-  disjunctionDeclaration = do
-    let name = mkQualifiedName ["Mosquito", "Bool"] "_∨_"
-    let p    = mkVar "p" boolType
-    let q    = mkVar "q" boolType
-    let r    = mkVar "r" boolType
-    pImpR    <- mkImplication p r
-    qImpR    <- mkImplication q r
-    left     <- mkImplication qImpR r
-    body     <- mkImplication pImpR left
-    forall   <- mkForall "r" boolType body
-    let def  =  mkLam "p" boolType . mkLam "q" boolType $ forall
-    primitiveNewDefinedConstant name def binaryConnectiveType
-
-  -- |The disjunction constant.
-  disjunctionC :: Inference Term
-  disjunctionC = constantOfDecl disjunctionDeclaration
-
-  -- |The disjunction defining theorem.
-  disjunctionD :: Inference Theorem
-  disjunctionD = theoremOfDecl disjunctionDeclaration
+  disjunctionTheory :: Inference Theory
+  disjunctionTheory = do
+    thy       <- negationTheory
+    [p, q, r] <- mkVars [("p", boolType), ("q", boolType), ("r", boolType)]
+    pImpR     <- mkImplication p r
+    qImpR     <- mkImplication q r
+    left      <- mkImplication qImpR r
+    body      <- mkImplication pImpR left
+    forall    <- mkForall "r" boolType body
+    let def   =  mkLam "p" boolType . mkLam "q" boolType $ forall
+    registerNewDefinition thy "disjunction" def binaryConnectiveType
 
   -- |Makes a disjunction from two boolean-typed terms.
   mkDisjunction :: Term -> Term -> Inference Term
   mkDisjunction left right = do
-    disjunctionC <- disjunctionC
+    thy          <- disjunctionTheory
+    disjunctionC <- getConstantCurrent thy "disjunction"
     pre          <- mkApp disjunctionC left
     mkApp pre right
 
   fromDisjunction :: Term -> Inference (Term, Term)
   fromDisjunction term = do
-    (pre, right) <- fromApp term
+    thy           <- disjunctionTheory
+    disjC'        <- getConstantCurrent thy "disjunction"
+    (pre, right)  <- fromApp term
     (disjC, left) <- fromApp pre
-    return (left, right)
+    if disjC == disjC' then
+      return (left, right)
+    else
+      fail . unwords $ [
+        "fromDisjunction: term `", pretty term, "' is not a disjunction."
+      ]
 
   --
   -- ** Existential quantification
   --
 
   -- |The declaration and definition of the existential quantifier.
-  existsDeclaration :: Inference (Term, Theorem)
-  existsDeclaration = do
-    let name  =  mkQualifiedName ["Mosquito", "Bool"] "∃"
+  existsTheory :: Inference Theory
+  existsTheory = do
+    thy       <- disjunctionTheory
     let p     =  mkVar "P" $ mkFunctionType alphaType boolType
     let q     =  mkVar "q" boolType
     let x     =  mkVar "x" alphaType
-    let aBool = mkFunctionType alphaType boolType
+    let aBool =  mkFunctionType alphaType boolType
     px        <- mkApp p x
     pxq       <- mkImplication px q
     apxq      <- mkForall "x" alphaType pxq
     pqxqq     <- mkImplication apxq q
     qpqxqq    <- mkForall "q" boolType pqxqq
     let body  =  mkLam "P" aBool qpqxqq
-    primitiveNewDefinedConstant name body quantifierType
-
-  -- |The existential quantifier constant.
-  existsC :: Inference Term
-  existsC = constantOfDecl existsDeclaration
-
-  -- |The existential quantifier defining theorem.
-  existsD :: Inference Theorem
-  existsD = theoremOfDecl existsDeclaration
+    registerNewDefinition thy "exists" body quantifierType
 
   -- |Makes an existential quantification from a term and
   --  typed variable.
   mkExists :: String -> Type -> Term -> Inference Term
   mkExists name ty body = do
-    existsC   <- existsC
+    thy       <- existsTheory
+    existsC   <- getConstantCurrent thy "exists"
     let subst =  mkSubstitution [("α", ty)]
     let inst  =  termTypeSubst subst existsC
     let lam   =  mkLam name ty body
@@ -668,54 +668,61 @@ module Mosquito.Theories.Boolean {- (
 
   fromExists :: Term -> Inference (String, Type, Term)
   fromExists term = do
-    (quantifier, lam) <- fromApp term
-    fromLam lam
+    thy            <- existsTheory
+    existsC'       <- getConstantCurrent thy "exists"    
+    (existsC, lam) <- fromApp term
+    if existsC == existsC' then
+      fromLam lam
+    else
+      fail . unwords $ [
+        "fromExists: term `", pretty term, "' is not existentially quantified."
+      ]
 
   --
   -- ** If and only if
   --
 
-  iffDeclaration :: Inference (Term, Theorem)
-  iffDeclaration = do
-    let name = mkQualifiedName ["Mosquito", "Bool"] "_⇔_"
-    let p    = mkVar "p" boolType
-    let q    = mkVar "q" boolType
+  iffTheory :: Inference Theory
+  iffTheory = do
+    thy      <- existsTheory
+    [p, q]   <- mkVars [("p", boolType), ("q", boolType)]
     pq       <- mkImplication p q
     qp       <- mkImplication q p
     body     <- mkConjunction pq qp
     let lp   =  mkLam "p" boolType body
     let lq   =  mkLam "q" boolType lp
-    primitiveNewDefinedConstant name lq binaryConnectiveType
-
-  iffC :: Inference Term
-  iffC = constantOfDecl iffDeclaration
-
-  iffD :: Inference Theorem
-  iffD = theoremOfDecl iffDeclaration
+    registerNewDefinition thy "iff" lq binaryConnectiveType
 
   mkIff :: Term -> Term -> Inference Term
   mkIff left right = do
-    iffC <- iffC
+    thy  <- iffTheory
+    iffC <- getConstantCurrent thy "iff"
     left <- mkApp iffC left
     mkApp left right
 
   fromIff :: Term -> Inference (Term, Term)
-  fromIff body = do
-    (pre, right) <- fromApp body
-    (iffC, left) <- fromApp pre
-    return (left, right)
+  fromIff term = do
+    thy           <- iffTheory
+    iffC          <- getConstantCurrent thy "iff"
+    (pre, right)  <- fromApp term
+    (iffC', left) <- fromApp pre
+    if iffC == iffC' then
+      return (left, right)
+    else
+      fail . unwords $ [
+        "fromIff: term `", pretty term, "' is not a bi-implication."
+      ]
 
   --
   -- * Unique existence
   --
 
   -- | ex x. p /\ forall y. p y ==> x = y
-  uniqueExistsDeclaration :: Inference (Term, Theorem)
-  uniqueExistsDeclaration = do
-    let name =  mkQualifiedName ["Mosquito", "Bool"] "∃!"
+  uniqueExistsTheory :: Inference Theory
+  uniqueExistsTheory = do
+    thy      <- iffTheory
     let p    =  mkVar "P" $ mkFunctionType alphaType boolType
-    let x    =  mkVar "x" alphaType
-    let y    =  mkVar "y" alphaType
+    [x, y]   <- mkVars [("x", alphaType), ("y", alphaType)]
     py       <- mkApp p y
     px       <- mkApp p x
     xy       <- mkEquality x y
@@ -724,17 +731,12 @@ module Mosquito.Theories.Boolean {- (
     body     <- mkConjunction px right
     ex       <- mkExists "x" alphaType body 
     let defn =  mkLam "P" (mkFunctionType alphaType boolType) ex
-    primitiveNewDefinedConstant name defn quantifierType
-
-  uniqueExistsC :: Inference Term
-  uniqueExistsC = constantOfDecl uniqueExistsDeclaration
-
-  uniqueExistsD :: Inference Theorem
-  uniqueExistsD = theoremOfDecl uniqueExistsDeclaration
+    registerNewDefinition thy "uniqueExists" defn quantifierType
 
   mkUniqueExists :: String -> Type -> Term -> Inference Term
   mkUniqueExists name ty body = do
-    uniqueExC <- uniqueExistsC
+    thy       <- uniqueExistsTheory
+    uniqueExC <- getConstantCurrent thy "uniqueExists"
     let subst =  mkSubstitution [("α", ty)]
     let inst  =  termTypeSubst subst uniqueExC
     let lam   =  mkLam name ty body
@@ -742,8 +744,15 @@ module Mosquito.Theories.Boolean {- (
 
   fromUniqueExists :: Term -> Inference (String, Type, Term)
   fromUniqueExists term = do
-    (quantifier, lam) <- fromApp term
-    fromLam lam
+    thy               <- uniqueExistsTheory
+    uniqueExC         <- getConstantCurrent thy "uniqueExists"
+    (uniqueExC', lam) <- fromApp term
+    if uniqueExC == uniqueExC' then
+      fromLam lam
+    else
+      fail . unwords $ [
+        "fromUniqueExists: term `", pretty term, "' is not uniquely existentially quantified."
+      ]
 
   --
   -- * Lemmata
@@ -756,18 +765,26 @@ module Mosquito.Theories.Boolean {- (
   -- |Produces a derivation of @{} |- forall t. t = t@.
   reflexivityT :: Inference Theorem
   reflexivityT = do
-    forallD <- forallD
-    let t = mkVar "t" alphaType
-    eq    <- mkEquality t t
-    conj  <- mkForall "t" alphaType eq
-    prf   <- mkConjecture "reflexivity" conj
-    prf   <- act prf . Apply $ unfoldConstantP forallD
-    prf   <- act prf . Apply $ betaReduceP
-    prf   <- act prf . Apply $ abstractP
-    prf   <- act prf . Apply $ trueEqualityIntroductionP
-    prf   <- act prf . Apply $ alphaP
+    thy     <- uniqueExistsTheory
+    forallD <- getTheoremCurrent thy "forallD"
+    let t   =  mkVar "t" alphaType
+    eq      <- mkEquality t t
+    conj    <- mkForall "t" alphaType eq
+    prf     <- mkConjecture "reflexivity" conj
+    prf     <- act prf . Apply $ unfoldConstantP forallD
+    prf     <- act prf . Apply $ betaReduceP
+    prf     <- act prf . Apply $ abstractP
+    prf     <- act prf . Apply $ trueEqualityIntroductionP
+    prf     <- act prf . Apply $ alphaP
     qed prf
 
+  reflexivityTTheory :: Inference Theory
+  reflexivityTTheory = do
+    thy <- uniqueExistsTheory
+    thm <- reflexivityT
+    registerTheorem thy "reflexivityT" thm
+
+{-
   -- |Produces a derivation of @{} |- forall t u. t = u ==> u = t@.
   symmetryT :: Inference Theorem
   symmetryT = do

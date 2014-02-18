@@ -40,12 +40,12 @@ where
     pretty thy =
       L.intercalate "\n" [
         unwords $ ["theory", pretty (get name thy), "extending"] ++ (L.map (pretty . get name) $ S.toAscList $ get parents thy)
-      , "theorems:"
-      , unwords $ L.map (\(n, t) -> pretty n ++ ": " ++ pretty t) $ M.toAscList $ get theorems thy
-      , "constant descriptions:"
-      , unwords $ L.map (\(n, t) -> pretty n) $ M.toAscList $ get constants thy
-      , "type operator descriptions:"
-      , unwords $ L.map (\(n, t) -> pretty n) $ M.toAscList $ get typeOps thy
+      , "THEOREMS:"
+      , "  " ++ (L.intercalate "\n  " $ L.map (\(n, t) -> pretty n ++ ": " ++ pretty t) $ M.toAscList $ get theorems thy)
+      , "CONSTANT DESCRIPTIONS"
+      , "  " ++  (L.intercalate "\n  " $ L.map (\(n, t) -> pretty n) $ M.toAscList $ get constants thy)
+      , "TYPE OPERTOR DESCRIPTIONS"
+      , "  " ++  (L.intercalate "\n  " $ L.map (\(n, t) -> pretty n) $ M.toAscList $ get typeOps thy)
       ]
 
   primitiveHOL :: Theory
