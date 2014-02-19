@@ -78,9 +78,12 @@ module Mosquito.Theories.Boolean {- (
 
   trueTheory :: Inference Theory
   trueTheory = do
-    let t    =  mkLam "a" boolType $ mkVar "a" boolType
-    eq       <- mkEquality t t
-    registerNewDefinition initTheory "true" eq boolType
+    let t =  mkLam "a" boolType $ mkVar "a" boolType
+    eq    <- mkEquality t t
+    thy   <- registerNewDefinition initTheory "true" eq boolType
+    thy   <- registerNewLatexRepresentationCurrent thy "true" (NoFix "\\top", False)
+    thy   <- registerNewUnicodeRepresentationCurrent thy "true" (NoFix "⟙", False)
+    return thy
 
   -- |Produces a derivation of @{} ⊢ true@.
   trueIntroductionT :: Inference Theorem
@@ -424,8 +427,8 @@ module Mosquito.Theories.Boolean {- (
   isImplication :: Term -> Bool
   isImplication trm = do
     inference (fromImplication trm)
-      (const True)
       (const False)
+      (const True)
 
   -- |Implication elimination (modus ponens) rule.
   implicationEliminationR :: Theorem -> Theorem -> Inference Theorem
@@ -770,7 +773,7 @@ module Mosquito.Theories.Boolean {- (
     let t   =  mkVar "t" alphaType
     eq      <- mkEquality t t
     conj    <- mkForall "t" alphaType eq
-    prf     <- mkConjecture "reflexivity" conj
+    prf     <- mkConjecture "reflexivityT" conj
     prf     <- act prf . Apply $ unfoldConstantP forallD
     prf     <- act prf . Apply $ betaReduceP
     prf     <- act prf . Apply $ abstractP
@@ -778,41 +781,47 @@ module Mosquito.Theories.Boolean {- (
     prf     <- act prf . Apply $ alphaP
     qed prf
 
-  reflexivityTTheory :: Inference Theory
-  reflexivityTTheory = do
-    thy <- uniqueExistsTheory
-    thm <- reflexivityT
-    registerTheorem thy "reflexivityT" thm
+  updateTheory :: Inference Theory -> String -> Inference Theorem -> Inference Theory
+  updateTheory thy name thm = do
+    thy <- thy
+    thm <- thm
+    registerTheorem thy name thm
 
-{-
+  reflexivityTTheory :: Inference Theory
+  reflexivityTTheory = updateTheory uniqueExistsTheory "reflexivityT" reflexivityT
+
   -- |Produces a derivation of @{} |- forall t u. t = u ==> u = t@.
   symmetryT :: Inference Theorem
   symmetryT = do
-    forallD <- forallD
-    implicationD <- implicationD
-    conjunctionD <- conjunctionD
-    let t   =  mkVar "t" boolType
-    let u   =  mkVar "u" boolType
-    tu      <- mkEquality t u
-    ut      <- mkEquality u t
-    body    <- mkImplication tu ut
-    conj    <- mkForalls [("t", boolType), ("u", boolType)] body
-    prf     <- mkConjecture "symmetry" conj
-    prf     <- act prf . Apply $ unfoldConstantP forallD
-    prf     <- act prf . Apply $ betaReduceP
-    prf     <- act prf . Apply $ abstractP
-    prf     <- act prf . Apply $ trueEqualityIntroductionP
-    prf     <- act prf . Apply $ abstractP
-    prf     <- act prf . Apply $ trueEqualityIntroductionP
-    prf     <- act prf . Apply $ implicationIntroductionP
-    prf     <- act prf . Apply $ symmetryP
-    prf     <- act prf . Apply $ assumeP
+    thy          <- reflexivityTTheory
+    forallD      <- getTheoremCurrent thy "forallD"
+    implicationD <- getTheoremCurrent thy "implicationD"
+    conjunctionD <- getTheoremCurrent thy "conjunctionD"
+    [t, u]       <- mkVars [("t", boolType), ("u", boolType)]
+    tu           <- mkEquality t u
+    ut           <- mkEquality u t
+    body         <- mkImplication tu ut
+    conj         <- mkForalls [("t", boolType), ("u", boolType)] body
+    prf          <- mkConjecture "symmetryT" conj
+    prf          <- act prf . Apply $ unfoldConstantP forallD
+    prf          <- act prf . Apply $ betaReduceP
+    prf          <- act prf . Apply $ abstractP
+    prf          <- act prf . Apply $ trueEqualityIntroductionP
+    prf          <- act prf . Apply $ abstractP
+    prf          <- act prf . Apply $ trueEqualityIntroductionP
+    prf          <- act prf . Apply $ implicationIntroductionP
+    prf          <- act prf . Apply $ symmetryP
+    prf          <- act prf . Apply $ assumeP
     qed prf
+
+  symmetryTTheory :: Inference Theory
+  symmetryTTheory = updateTheory reflexivityTTheory "symmetryT" symmetryT
 
   -- |Produces a derivation of @{} |- forall t u v. t = u ==> u = v ==> t = v@.
   transitivityT :: Inference Theorem
   transitivityT = do
-    forallD   <- forallD
+    thy       <- symmetryTTheory
+    forallD   <- getTheoremCurrent thy "forallD"
     [t, u, v] <- mkVars [("t", boolType), ("u", boolType), ("v", boolType)]
     tu        <- mkEquality t u
     uv        <- mkEquality u v
@@ -820,7 +829,7 @@ module Mosquito.Theories.Boolean {- (
     uvtv      <- mkImplication uv tv
     body      <- mkImplication tu uvtv
     conj      <- mkForalls [("t", boolType), ("u", boolType), ("v", boolType)] body
-    prf       <- mkConjecture "transitivity" conj
+    prf       <- mkConjecture "transitivityT" conj
     prf       <- act prf . Apply $ unfoldConstantP forallD
     prf       <- act prf . Apply $ betaReduceP
     prf       <- act prf . repeatN 3 $ Apply abstractP >=> Apply trueEqualityIntroductionP
@@ -829,24 +838,32 @@ module Mosquito.Theories.Boolean {- (
     prf       <- act prf . repeatN 2 $ Apply assumeP
     qed prf
 
+  transitivityTTheory :: Inference Theory
+  transitivityTTheory = updateTheory symmetryTTheory "transitivityT" transitivityT
+
   -- |Produces a derivation of @{} |- forall t. t ==> t@.
   assumeT :: Inference Theorem
   assumeT = do
-    forallD <- forallD
-    let t =  mkVar "t" boolType
-    tt    <- mkImplication t t
-    conj  <- mkForall "t" boolType tt
-    prf   <- mkConjecture "assume" conj
-    prf   <- act prf . Apply $ unfoldConstantP forallD
-    prf   <- act prf . Apply $ betaReduceP
-    prf   <- act prf $ Apply abstractP >=> Apply trueEqualityIntroductionP
-    prf   <- act prf $ Apply implicationIntroductionP >=> Apply assumeP
+    thy     <- transitivityTTheory
+    forallD <- getTheoremCurrent thy "forallD"
+    let t   =  mkVar "t" boolType
+    tt      <- mkImplication t t
+    conj    <- mkForall "t" boolType tt
+    prf     <- mkConjecture "assumeT" conj
+    prf     <- act prf . Apply $ unfoldConstantP forallD
+    prf     <- act prf . Apply $ betaReduceP
+    prf     <- act prf $ Apply abstractP >=> Apply trueEqualityIntroductionP
+    prf     <- act prf $ Apply implicationIntroductionP >=> Apply assumeP
     qed prf
+
+  assumeTTheory :: Inference Theory
+  assumeTTheory = updateTheory transitivityTTheory "assumeT" assumeT
 
   -- |Produces a derivation of @{} |- forall a t u. t = u ==> fn (a:ty). t = fn (a:ty). u@.
   abstractT :: Inference Theorem
   abstractT = do
-    forallD   <- forallD
+    thy       <- assumeTTheory
+    forallD   <- getTheoremCurrent thy "forallD"
     [a, t, u] <- mkVars [("a", alphaType), ("t", boolType), ("u", boolType)]
     tu        <- mkEquality t u
     let at    =  mkLam "a" alphaType t
@@ -854,7 +871,7 @@ module Mosquito.Theories.Boolean {- (
     atau      <- mkEquality at au
     body      <- mkImplication tu atau
     conj      <- mkForalls [("a", alphaType), ("t", boolType), ("u", boolType)] body
-    prf       <- mkConjecture "abstract" conj
+    prf       <- mkConjecture "abstractT" conj
     prf       <- act prf . Apply $ unfoldConstantP forallD
     prf       <- act prf . Apply $ betaReduceP
     prf       <- act prf . repeatN 3 $ Apply abstractP >=> Apply trueEqualityIntroductionP
@@ -863,22 +880,27 @@ module Mosquito.Theories.Boolean {- (
     prf       <- act prf . Apply $ assumeP
     qed prf
 
+
+  abstractTTheory :: Inference Theory
+  abstractTTheory = updateTheory assumeTTheory "abstractT" abstractT
+
   -- |Produces a derivation of @{} |- forall f g t u. f = g ==> t = u ==> f t = g u@.
   combineT = Mosquito.Utility.Pretty.putStrLn $ do
-    forallD <- forallD
+    thy       <- abstractTTheory
+    forallD   <- getTheoremCurrent thy "forallD"
     let fvars = [("f", mkFunctionType alphaType betaType), ("g", mkFunctionType alphaType betaType)]
     let avars = [("t", alphaType), ("u", alphaType)]
-    [f, g] <- mkVars fvars
-    [t, u] <- mkVars avars
-    fg     <- mkEquality f g
-    tu     <- mkEquality t u
-    ft     <- mkApp f t
-    gu     <- mkApp g u
-    ftgu   <- mkEquality ft gu
-    body'  <- mkImplication tu ftgu
-    body   <- mkImplication fg body'
-    conj   <- mkForalls (fvars ++ avars) body
-    prf    <- mkConjecture "combine" conj
+    [f, g]    <- mkVars fvars
+    [t, u]    <- mkVars avars
+    fg        <- mkEquality f g
+    tu        <- mkEquality t u
+    ft        <- mkApp f t
+    gu        <- mkApp g u
+    ftgu      <- mkEquality ft gu
+    body'     <- mkImplication tu ftgu
+    body      <- mkImplication fg body'
+    conj      <- mkForalls (fvars ++ avars) body
+    prf       <- mkConjecture "combine" conj
     prf       <- act prf . Apply $ unfoldConstantP forallD
     prf       <- act prf . Apply $ betaReduceP
     -- XXX: hit the bug in unfoldConstantP with unification occurs check
@@ -890,8 +912,9 @@ module Mosquito.Theories.Boolean {- (
 
   -- |Produces a derivation of @{} |- forall t. t /\ true ==> t@.
   conjunctionTrue1T = Mosquito.Utility.Pretty.putStrLn $ do
-    trueC   <- trueC
-    forallD <- forallD
+    thy     <- assumeTTheory
+    trueC   <- getConstantCurrent thy "true"
+    forallD <- getTheoremCurrent thy "trueD"
     let t   =  mkVar "t" boolType
     tTrue   <- mkConjunction t trueC
     body    <- mkImplication tTrue t
@@ -905,109 +928,3 @@ module Mosquito.Theories.Boolean {- (
     prf     <- act prf . Apply $ conjunctionElimination2P trueC
     prf     <- act prf . Apply $ assumeP
     qed prf
-
-
-
-{-
-
-  -- trueEqIffThm :: Inference Theorem
-{-
-  trueEqIffThm = Mosquito.Utility.Pretty.putStrLn $ do
-    trueC <- trueC
-    forallD <- forallD
-    let t =  mkVar "t" boolType
-    let u =  mkVar "u" boolType
-    tu    <- mkEquality t u
-    tut   <- mkEquality tu trueC
-    body  <- mkEquality tu tut
-    conj  <- mkForalls [("t", boolType), ("u", boolType)] body
-    prf   <- mkConjecture "trueEqIffThm" conj
-    prf   <- act prf . Apply $ unfoldConstantPreTactic forallD
-    prf   <- act prf . Apply $ betaReducePreTactic
-    prf   <- act prf . repeatN 2 $ Apply abstractPreTactic >=> Apply trueEqIPreTactic
-    prf   <- act prf . Apply $ deductAntiSymmetricPreTactic
-    prf   <- act prf . Try $ Apply trueEqIPreTactic >=> Apply assumePreTactic
-    prf   <- act prf . Apply $ trueEqEPreTactic
-    prf <- act prf . Apply $ assumePreTactic
-    qed prf
--}
-
-
-  -- tImpliesTThm :: Inference Theorem
-  tImpliesTThm = Mosquito.Utility.Pretty.putStrLn $ do
-    forallD      <- forallD
-    implicationD <- implicationD
-    conjunctionD <- conjunctionD
-    let t = mkVar "t" boolType
-    body <- mkImplication t t
-    conj <- mkForall "t" boolType body
-    prf  <- mkConjecture "tImpliesTThm" conj
-    prf  <- act prf . Apply $ unfoldConstantPreTactic forallD
-    prf  <- act prf . Apply $ betaReducePreTactic
-    prf  <- act prf . Apply $ abstractPreTactic
-    prf  <- act prf . Apply $ unfoldConstantPreTactic implicationD
-    prf  <- act prf . Apply $ betaReducePreTactic
-    prf  <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
-    prf  <- act prf . Apply $ betaReducePreTactic
-    prf    <- act prf . Apply $ trueEqIPreTactic
-    return prf
-
-  unfoldConstantsTactic :: [Theorem] -> Tactic
-  unfoldConstantsTactic [] = Id
-  unfoldConstantsTactic (x:xs) = Apply (unfoldConstantPreTactic x) >=> unfoldConstantsTactic xs
-
-  mkApps :: [Term] -> Inference Term
-  mkApps (x:[xs]) = mkApp x xs
-  mkApps (x:y:xs)   = do
-    head <- mkApp x y
-    mkApps $ head:xs
-  mkApps _ = fail "makeApps"
-
-{-
-  -- symmetryThm :: Inference Theorem
-  symmetryThm = Mosquito.Utility.Pretty.putStrLn $ do
-    forallD <- forallD
-    implicationD <- implicationD
-    conjunctionD <- conjunctionD
-    let t = mkVar "t" alphaType
-    let u = mkVar "u" alphaType
-    let k = mkLam "x" boolType . mkLam "y" boolType $ mkVar "x" boolType
-    tu    <- mkEquality t u
-    ut    <- mkEquality u t
-    ktu   <- mkApps [k, tu, ut]
-    body  <- mkImplication tu ut
-    conj'  <- mkForall "u" alphaType body
-    conj   <- mkForall "t" alphaType conj'
-    prf    <- mkConjecture "symmetryThm" conj
-    prf    <- act prf $ unfoldConstantsTactic [forallD, implicationD, conjunctionD]
-    prf    <- act prf . Apply $ betaReducePreTactic
-    prf    <- act prf . repeatN 2 $ Apply abstractPreTactic >=> Apply trueEqIPreTactic
-    prf    <- act prf . Apply $ deductAntiSymmetricPreTactic
-    prf    <- act prf . Try $ Apply abstractPreTactic >=> Apply combinePreTactic
-    prf    <- act prf . Try $ Apply trueEqIPreTactic >=> Apply symmetryPreTactic >=> Apply assumePreTactic
-    prf    <- act prf . Try $ Apply combinePreTactic >=> Try (Apply alphaPreTactic) >=> Apply trueEqIPreTactic >=> Apply assumePreTactic
-    prf    <- act prf . Apply $ trueEqEPreTactic
-    prf    <- act prf . Apply $ equalityModusPonensPreTactic ktu
-    --prf    <- act prf . Apply $ unfoldConstantPreTactic forallD
-    --prf    <- act prf . Apply $ betaReducePreTactic
-    --prf    <- act prf . Apply $ abstractPreTactic
-    --prf    <- act prf . Apply $ trueEqIPreTactic
-    --prf    <- act prf . Apply $ unfoldConstantPreTactic implicationD
-    --prf    <- act prf . Apply $ betaReducePreTactic
-    --prf    <- act prf . Apply $ unfoldConstantPreTactic conjunctionD
-    --prf    <- act prf . Apply $ betaReducePreTactic
-    --prf    <- act prf . Apply $ abstractPreTactic
-    --prf    <- act prf . Apply $ trueEqIPreTactic
-    --prf    <- act prf . Apply $ deductAntiSymmetricPreTactic
-    --prf    <- act prf . Try . Apply $ abstractPreTactic
-    --prf    <- act prf . Try . Apply $ combinePreTactic
-    --prf    <- act prf . Try . Apply $ combinePreTactic
-    --prf    <- act prf . Try . Apply $ alphaPreTactic
-    --prf    <- act prf . Try . Apply $ trueEqIPreTactic
-    --prf    <- act prf . Try . Apply $ assumePreTactic
-    --prf    <- act prf . Try $ Apply symmetryPreTactic >=> Apply assumePreTactic
-    --prf    <- act prf . Apply $ trueEqEPreTactic
-    return prf
--}
--}
--}

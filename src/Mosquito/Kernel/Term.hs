@@ -217,7 +217,7 @@ where
 
   -- |The name of the primitive HOL function space type operator.
   functionQualifiedName :: QualifiedName
-  functionQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "_→_"
+  functionQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "Arrow"
 
   -- |The description of the primitive HOL bool type.
   boolDescription :: TypeOperatorDescription
@@ -362,9 +362,6 @@ where
 
   instance Pretty Type where
     pretty (TyVar v)                 = v
-    pretty (TyOperator descr [d, r])
-      | descr == functionDescription = bracket d ++ " → " ++ bracket r
-      | otherwise                    = unwords [pretty descr, bracket d, bracket r]
     pretty (TyOperator descr args)   =
       if null args then
         pretty descr
@@ -452,7 +449,7 @@ where
   -- |Qualified name of the (primitive) equality constant baked into
   --  Mosquito's higher-order logic.
   equalityQualifiedName :: QualifiedName
-  equalityQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "_=_"
+  equalityQualifiedName = mkQualifiedName ["Mosquito", "Primitive"] "equality"
 
   -- |Polymorphic type of the equality constant.
   equalityType :: Type

@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell, TypeOperators #-}
 
 module Mosquito.Theories.Theory (
+  PrettyPrintingEntry(..),
   Theory, newTheory,
   primitiveHOL,
   getName, getParents, getParentsQualifiedNames,
@@ -9,7 +10,9 @@ module Mosquito.Theories.Theory (
   getConstant, getConstantCurrent,
   getTypeOperatorDescription, getTypeOperatorDescriptionCurrent,
   registerTheorem, registerConstantDescription, registerTypeOperatorDescription,
-  registerNewDefinition, registerNewAxiom, registerNewType
+  registerNewDefinition, registerNewAxiom, registerNewType,
+  registerNewLatexRepresentation, registerNewLatexRepresentationCurrent,
+  registerNewUnicodeRepresentation, registerNewUnicodeRepresentationCurrent
 )
 where
 
@@ -25,6 +28,15 @@ where
 
   import Mosquito.Utility.Pretty
 
+  data PrettyPrintingEntry
+    = NoFix   String
+    | Postfix String
+    | Infix   String
+    | Mixfix  [String]
+      deriving (Eq, Ord)
+
+  type IsBinder = Bool
+
   data Theory
     = Theory {
       _name      :: QualifiedName
@@ -32,6 +44,8 @@ where
     , _theorems  :: M.Map QualifiedName Theorem
     , _constants :: M.Map QualifiedName ConstantDescription
     , _typeOps   :: M.Map QualifiedName TypeOperatorDescription
+    , _latex     :: M.Map QualifiedName (PrettyPrintingEntry, IsBinder)
+    , _unicode   :: M.Map QualifiedName (PrettyPrintingEntry, IsBinder)
     } deriving (Eq, Ord)
 
   mkLabels [''Theory]
@@ -56,27 +70,44 @@ where
     , _theorems  = M.empty
     , _constants =
         M.fromList [
-          (mkQualifiedName ["Mosquito", "Primitive"] "_=_", equalityDescription)
+          (mkQualifiedName ["Mosquito", "Primitive"] "equality", equalityDescription)
         ]
     , _typeOps   =
         M.fromList [
-          (mkQualifiedName ["Mosquito", "Primitive"] "_→_", functionDescription)
+          (mkQualifiedName ["Mosquito", "Primitive"] "Arrow", functionDescription)
         , (mkQualifiedName ["Mosquito", "Primitive"] "Bool", boolDescription)
+        ]
+    , _latex     =
+        M.fromList [
+          (mkQualifiedName ["Mosquito", "Primitive"] "Arrow", (Infix "\\Rightarrow", False))
+        , (mkQualifiedName ["Mosquito", "Primitive"] "equality", (Infix "=", False))
+        ]
+    , _unicode   =
+        M.fromList [
+          (mkQualifiedName ["Mosquito", "Primitive"] "Arrow", (Infix "⇒", False))
+        , (mkQualifiedName ["Mosquito", "Primitive"] "equality", (Infix "=", False))
         ]
     }
 
   newTheory :: [Theory] -> QualifiedName -> Theory
   newTheory parents name =
-    let thms  = M.unions $ map (get theorems) parents in
-    let cnsts = M.unions $ map (get constants) parents in
-    let tyops = M.unions $ map (get typeOps) parents in
-      Theory {
-        _name      = name
-      , _parents   = S.fromList parents
-      , _theorems  = thms
-      , _constants = cnsts
-      , _typeOps   = tyops
-      }
+    Theory {
+      _name      = name
+    , _parents   = S.fromList parents
+    , _theorems  = M.unions $ map (get theorems) parents
+    , _constants = M.unions $ map (get constants) parents
+    , _typeOps   = M.unions $ map (get typeOps) parents
+    , _latex     = M.unions $ map (get latex) parents
+    , _unicode   = M.unions $ map (get unicode) parents
+    }
+
+  isRegisteredName :: Theory -> QualifiedName -> Bool
+  isRegisteredName thy name =
+    L.elem name $ concat [
+      M.keys $ get theorems thy
+    , M.keys $ get constants thy
+    , M.keys $ get typeOps thy
+    ]
 
   getName :: Theory -> QualifiedName
   getName = get name
@@ -201,3 +232,34 @@ where
     thy       <- registerConstantDescription thy repN repC
     registerTypeOperatorDescription thy nm td
 
+  registerNewLatexRepresentation :: Theory -> QualifiedName -> (PrettyPrintingEntry, IsBinder) -> Inference Theory
+  registerNewLatexRepresentation thy name entry =
+    if isRegisteredName thy name then
+      return $ modify latex (M.insert name entry) thy
+    else
+      fail . unwords $ [
+        "registerNewLatexRepresentation: cannot register pretty-printing entry for `", pretty name, "'"
+      , "as the name is not associated to any theorem, constant or type operator description in the"
+      , "theory."
+      ]
+
+  registerNewLatexRepresentationCurrent :: Theory -> String -> (PrettyPrintingEntry, IsBinder) -> Inference Theory
+  registerNewLatexRepresentationCurrent thy name entry =
+    let name' = mkQualifiedName (getNameAsPath thy) name in
+      registerNewLatexRepresentation thy name' entry
+
+  registerNewUnicodeRepresentation :: Theory -> QualifiedName -> (PrettyPrintingEntry, IsBinder) -> Inference Theory
+  registerNewUnicodeRepresentation thy name entry =
+    if isRegisteredName thy name then
+      return $ modify unicode (M.insert name entry) thy
+    else
+      fail . unwords $ [
+        "registerNewUnicodeRepresentation: cannot register pretty-printing entry for `", pretty name, "'"
+      , "as the name is not associated to any theorem, constant or type operator description in the"
+      , "theory."
+      ]
+
+  registerNewUnicodeRepresentationCurrent :: Theory -> String -> (PrettyPrintingEntry, IsBinder) -> Inference Theory
+  registerNewUnicodeRepresentationCurrent thy name entry =
+    let name' = mkQualifiedName (getNameAsPath thy) name in
+      registerNewUnicodeRepresentation thy name' entry
