@@ -1,89 +1,33 @@
--- |A module implementing qualified names of the form @Mosquito.Bool.true@
---  and similar used for identifying constants, types, lemmas, and related
---  notions throughout the Mosquito code base.
+{-# LANGUAGE GADTs #-}
+
 module Mosquito.Kernel.QualifiedName (
-  -- * Qualified names and components
-  Path,
+  NonEmpty,
   QualifiedName,
-  -- * Utility functions and tests
-  qualifiedNamePath, qualifiedNameHead,
-  mkQualifiedName, mkSimpleName,
-  -- * Fresh name generations
-  freshQualifiedName,
-  -- * Utilities for pretty printing
-  isInfix, partialInfixKernel
+  mkQualifiedName
 )
 where
 
-  import qualified Data.List as L
-  import qualified Data.Maybe as M
-  import qualified Data.Set as S
+  import Control.Applicative
 
-  import Mosquito.Utility.Pretty
+  import Data.NonEmpty
 
-  -- |The type of paths (i.e. the `.' separated list of identifiers preceeding
-  --  the ultimate dot in a qualified name).  Can possibly be empty for top-level
-  --  unqualified names like @true@.
-  type Path = [String]
+  type NonEmpty a = T [] a
 
-  -- |The type of qualified names, consisting of a possibly empty path followed
-  --  by a mandatory identifier (the `head'.)
-  newtype QualifiedName = QualifiedName (Path, String)
-    deriving(Eq, Show, Ord)
+  data QualifiedName where
+    QualifiedName :: NonEmpty String -> String -> QualifiedName
+    deriving(Eq, Ord, Show)
 
-  -- |Returns the path of a qualified name.
-  qualifiedNamePath :: QualifiedName -> Path
-  qualifiedNamePath (QualifiedName (path, _)) = path
+  mkQualifiedName :: NonEmpty String -> String -> QualifiedName
+  mkQualifiedName = QualifiedName
 
-  -- |Returns the head of a qualified name.
-  qualifiedNameHead :: QualifiedName -> String
-  qualifiedNameHead (QualifiedName (_, hd)) = hd
+  getPathOfQualifiedName :: QualifiedName -> NonEmpty String
+  getPathOfQualifiedName (QualifiedName path head) = path
 
-  -- |Creates a new qualified name from a path and head.
-  --  XXX: shouldn't this fail if the head is the empty string,
-  --  or should those checks be elsewhere, e.g. in the parser?
-  mkQualifiedName :: Path -> String -> QualifiedName
-  mkQualifiedName path hd = QualifiedName (path, hd)
+  getHeadOfQualifiedName :: QualifiedName -> String
+  getHeadOfQualifiedName (QualifiedName path head) = head
 
-  -- |Constructs a `simple name', that is a qualified name whose path is
-  --  empty and consists solely of a head.
-  mkSimpleName :: String -> QualifiedName
-  mkSimpleName = mkQualifiedName []
+  mapHead :: (String -> String) -> QualifiedName -> QualifiedName
+  mapHead f (QualifiedName path head) = QualifiedName path $ f head
 
-  -- |Creates a freshly generated qualified name in a given path.
-  freshQualifiedName :: Path         -- ^The path to put the name in
-                     -> Maybe String -- ^A suggested base for the fresh name
-                     -> S.Set String -- ^A set of names to avoid
-                     -> QualifiedName
-  freshQualifiedName path suggestion avoid =
-    let base = M.fromMaybe "a" suggestion in
-    let generated = generate 0 base avoid in
-      mkQualifiedName path generated
-    where
-      generate :: Integer -> String -> S.Set String -> String
-      generate counter base avoiding =
-        if base `S.member` avoiding then
-          generate 1 (base ++ show counter) avoiding
-        else
-          base
-
-  -- |Tests whether a qualified name is an infix name for pretty-printing
-  --  purposes.  XXX: this is a really bad test and is broken.  Fixme.
-  isInfix :: QualifiedName -> Bool
-  isInfix (QualifiedName (_, hd)) =
-    case hd of
-      ['_', _, '_'] -> True
-      _             -> False
-
-  -- |Recovers the infix `kernel' of a qualified name deemed to be infix.
-  --  For instance, in the qualified name @Mosquito.Bool._∧_@ the kernel
-  --  is @∧@.
-  partialInfixKernel :: QualifiedName -> String
-  partialInfixKernel (QualifiedName (_, ['_', k, '_'])) = [k]
-
-  instance Pretty QualifiedName where
-    pretty (QualifiedName (path, hd)) =
-      if null path then
-        hd
-      else
-        L.intercalate "." path ++ "." ++ hd
+  mapPath :: (NonEmpty String -> NonEmpty String) -> QualifiedName -> QualifiedName
+  mapPath f (QualifiedName path head) = QualifiedName (f path) head

@@ -39,6 +39,9 @@ where
   class Pretty a where
     pretty :: a -> String
 
+  class PrettyInCtxt a b where
+    prettyCtxt :: a -> b -> String
+
   -- |Brackets a pretty-printed value with parentheses if its
   --  size, as calculated via the @Size@ typeclass, is over a given
   --  threshold, otherwise returns the unmolested output of the
@@ -55,9 +58,11 @@ where
   instance Pretty String where
     pretty = id
 
+{-
   instance Pretty a => Pretty [a] where
     pretty [] = "[]"
     pretty xs = "[" ++ (L.intercalate ", " $ map pretty xs) ++ "]"
+-}
 
   instance (Pretty a, Pretty b) => Pretty (a, b) where
     pretty (l, r) = "(" ++ pretty l ++ ", " ++ pretty r ++ ")"
@@ -89,6 +94,9 @@ where
   --  the IO action.
   putStrLn :: Pretty a => a -> IO ()
   putStrLn = lift Prelude.putStrLn
+
+  putStrLnCtxt :: PrettyInCtxt a b => a -> b -> IO ()
+  putStrLnCtxt = 
 
   -- |Version of @putStr@ which first transforms its input into a
   --  pretty-printed representation with @pretty@ before performing

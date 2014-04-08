@@ -81,8 +81,8 @@ module Mosquito.Theories.Boolean {- (
     let t =  mkLam "a" boolType $ mkVar "a" boolType
     eq    <- mkEquality t t
     thy   <- registerNewDefinition initTheory "true" eq boolType
-    thy   <- registerNewLatexRepresentationCurrent thy "true" (NoFix "\\top", False)
-    thy   <- registerNewUnicodeRepresentationCurrent thy "true" (NoFix "⟙", False)
+    thy   <- registerNewLatexRepresentationCurrent thy "true" (NoFix "\\top" False)
+    thy   <- registerNewUnicodeRepresentationCurrent thy "true" (NoFix "⟙" False)
     return thy
 
   -- |Produces a derivation of @{} ⊢ true@.
@@ -173,7 +173,10 @@ module Mosquito.Theories.Boolean {- (
     let left  =  mkVar "P" (mkFunctionType alphaType boolType)
     eq        <- mkEquality left right
     let def   =  mkLam "P" (mkFunctionType alphaType boolType) eq
-    registerNewDefinition thy "forall" def quantifierType
+    thy       <- registerNewDefinition thy "forall" def quantifierType
+    thy       <- registerNewLatexRepresentationCurrent thy "forall" (NoFix "\\forall" True)
+    thy       <- registerNewUnicodeRepresentationCurrent thy "forall" (NoFix "∀" True)
+    return thy
 
   mkForall :: String -> Type -> Term -> Inference Term
   mkForall name ty body = do
@@ -232,7 +235,10 @@ module Mosquito.Theories.Boolean {- (
     let inst =  termTypeSubst subst forallC
     let body =  mkLam "a" boolType (mkVar "a" boolType)
     def      <- mkApp inst body
-    registerNewDefinition thy "false" def boolType
+    thy      <- registerNewDefinition thy "false" def boolType
+    thy      <- registerNewLatexRepresentationCurrent thy "false" (NoFix "\\bot" False)
+    thy      <- registerNewUnicodeRepresentationCurrent thy "false" (NoFix "⊥" False)
+    return thy
 
   --
   -- ** Conjunction
@@ -252,7 +258,10 @@ module Mosquito.Theories.Boolean {- (
     let left  =  mkLam "f" binaryConnectiveType leftB
     eq        <- mkEquality left right
     let def   =  mkLam "p" boolType (mkLam "q" boolType eq)
-    registerNewDefinition thy "conjunction" def binaryConnectiveType
+    thy       <- registerNewDefinition thy "conjunction" def binaryConnectiveType
+    thy       <- registerNewLatexRepresentationCurrent thy "conjunction" (Infix "\\wedge")
+    thy       <- registerNewUnicodeRepresentationCurrent thy "conjunction" (Infix "∧")
+    return thy
 
   -- |Makes a conjunction from two terms.
   mkConjunction :: Term -> Term -> Inference Term
@@ -400,7 +409,10 @@ module Mosquito.Theories.Boolean {- (
     conjunction <- mkConjunction p q
     eq          <- mkEquality conjunction p
     let def     =  mkLam "p" boolType . mkLam "q" boolType $ eq
-    registerNewDefinition thy "implication" def binaryConnectiveType
+    thy         <- registerNewDefinition thy "implication" def binaryConnectiveType
+    thy         <- registerNewLatexRepresentationCurrent thy "implication" (Infix "\\Longrightarrow")
+    thy         <- registerNewUnicodeRepresentationCurrent thy "implication" (Infix "⇒")
+    return thy
 
   -- |Makes an implication from two boolean-typed terms.
   mkImplication :: Term -> Term -> Inference Term
@@ -513,7 +525,10 @@ module Mosquito.Theories.Boolean {- (
     let a       =  mkVar "a" boolType
     implication <- mkImplication a falseC
     let def     =  mkLam "a" boolType implication
-    registerNewDefinition thy "negation" def (mkFunctionType boolType boolType)
+    thy         <- registerNewDefinition thy "negation" def (mkFunctionType boolType boolType)
+    thy         <- registerNewLatexRepresentationCurrent thy "negation" (NoFix "\\neg" False)
+    thy         <- registerNewUnicodeRepresentationCurrent thy "negation" (NoFix "¬" False)
+    return thy
 
   -- |Makes a negation from a boolean-typed term.
   mkNegation :: Term -> Inference Term
@@ -615,7 +630,10 @@ module Mosquito.Theories.Boolean {- (
     body      <- mkImplication pImpR left
     forall    <- mkForall "r" boolType body
     let def   =  mkLam "p" boolType . mkLam "q" boolType $ forall
-    registerNewDefinition thy "disjunction" def binaryConnectiveType
+    thy       <- registerNewDefinition thy "disjunction" def binaryConnectiveType
+    thy       <- registerNewLatexRepresentationCurrent thy "disjunction" (Infix "\\vee")
+    thy       <- registerNewUnicodeRepresentationCurrent thy "disjunction" (Infix "∨")
+    return thy
 
   -- |Makes a disjunction from two boolean-typed terms.
   mkDisjunction :: Term -> Term -> Inference Term
@@ -656,7 +674,10 @@ module Mosquito.Theories.Boolean {- (
     pqxqq     <- mkImplication apxq q
     qpqxqq    <- mkForall "q" boolType pqxqq
     let body  =  mkLam "P" aBool qpqxqq
-    registerNewDefinition thy "exists" body quantifierType
+    thy       <- registerNewDefinition thy "exists" body quantifierType
+    thy       <- registerNewLatexRepresentationCurrent thy "exists" (NoFix "\\exists" True)
+    thy       <- registerNewUnicodeRepresentationCurrent thy "exists" (NoFix "∃" True)
+    return thy
 
   -- |Makes an existential quantification from a term and
   --  typed variable.
@@ -694,7 +715,10 @@ module Mosquito.Theories.Boolean {- (
     body     <- mkConjunction pq qp
     let lp   =  mkLam "p" boolType body
     let lq   =  mkLam "q" boolType lp
-    registerNewDefinition thy "iff" lq binaryConnectiveType
+    thy      <- registerNewDefinition thy "iff" lq binaryConnectiveType
+    thy      <- registerNewLatexRepresentationCurrent thy "iff" (Infix "\\Leftrightarrow")
+    thy      <- registerNewUnicodeRepresentationCurrent thy "iff" (Infix "⇔")
+    return thy
 
   mkIff :: Term -> Term -> Inference Term
   mkIff left right = do
@@ -734,7 +758,10 @@ module Mosquito.Theories.Boolean {- (
     body     <- mkConjunction px right
     ex       <- mkExists "x" alphaType body 
     let defn =  mkLam "P" (mkFunctionType alphaType boolType) ex
-    registerNewDefinition thy "uniqueExists" defn quantifierType
+    thy      <- registerNewDefinition thy "uniqueExists" defn quantifierType
+    thy      <- registerNewLatexRepresentationCurrent thy "uniqueExists" (NoFix "\\exists!" True)
+    thy      <- registerNewUnicodeRepresentationCurrent thy "uniqueExists" (NoFix "∃!" True)
+    return thy
 
   mkUniqueExists :: String -> Type -> Term -> Inference Term
   mkUniqueExists name ty body = do
@@ -860,8 +887,8 @@ module Mosquito.Theories.Boolean {- (
   assumeTTheory = updateTheory transitivityTTheory "assumeT" assumeT
 
   -- |Produces a derivation of @{} |- forall a t u. t = u ==> fn (a:ty). t = fn (a:ty). u@.
-  abstractT :: Inference Theorem
-  abstractT = do
+  -- abstractT :: Inference Theorem
+  abstractT = Mosquito.Utility.Pretty.putStrLn . unicodeProofStateInTheory assumeTTheory False $ do
     thy       <- assumeTTheory
     forallD   <- getTheoremCurrent thy "forallD"
     [a, t, u] <- mkVars [("a", alphaType), ("t", boolType), ("u", boolType)]
@@ -881,12 +908,12 @@ module Mosquito.Theories.Boolean {- (
     qed prf
 
 
-  abstractTTheory :: Inference Theory
-  abstractTTheory = updateTheory assumeTTheory "abstractT" abstractT
+  -- abstractTTheory :: Inference Theory
+  -- abstractTTheory = updateTheory assumeTTheory "abstractT" abstractT
 
   -- |Produces a derivation of @{} |- forall f g t u. f = g ==> t = u ==> f t = g u@.
-  combineT = Mosquito.Utility.Pretty.putStrLn $ do
-    thy       <- abstractTTheory
+  combineT = do
+    thy       <- assumeTTheory
     forallD   <- getTheoremCurrent thy "forallD"
     let fvars = [("f", mkFunctionType alphaType betaType), ("g", mkFunctionType alphaType betaType)]
     let avars = [("t", alphaType), ("u", alphaType)]

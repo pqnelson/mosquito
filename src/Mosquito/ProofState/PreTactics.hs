@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, DoAndIfThenElse #-}
+{-# LANGUAGE TemplateHaskell, DoAndIfThenElse, FlexibleInstances #-}
 
 -- |Implements some basic tactics corresponding to the rules found
 --  in the kernel and in the file @DerivedRules.hs@.
@@ -42,6 +42,10 @@ module Mosquito.ProofState.PreTactics (
   type LocalEdit        = [Term] -> Term -> Inference (Justification, [([Term], Term)])
   type TermLocalEdit    = Term -> LocalEdit
   type TheoremLocalEdit = Theorem -> LocalEdit
+
+  instance Pretty [Term] where
+    pretty [] = ""
+    pretty xs = L.intercalate ", " . map pretty $ xs
 
   data PreTactic
     = PreTactic {

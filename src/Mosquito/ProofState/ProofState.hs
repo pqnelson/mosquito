@@ -9,7 +9,8 @@ module Mosquito.ProofState.ProofState (
   IncompleteDerivation,
   ProofState,
   mkConjecture, mkConjectureRule, qed,
-  act
+  act,
+  unicodeProofStateInTheory
 ) where
 
   import Prelude hiding (fail, repeat)
@@ -23,6 +24,8 @@ module Mosquito.ProofState.ProofState (
 
   import Mosquito.ProofState.PreTactics
   import Mosquito.ProofState.Tactics hiding (repeat, try, apply)
+
+  import Mosquito.Theories.Theory
 
   import Mosquito.Utility.Pretty
 
@@ -240,3 +243,48 @@ module Mosquito.ProofState.ProofState (
         , unwords ["Goals:", show $ countOpen proofState, "open with", show $ countSelected proofState, "selected."]
         , prettySelected . getPrettySelectedGoals $ proofState
         ]
+
+  unicodeIncompleteDerivationInTheory :: Theory -> ShowTypes -> IncompleteDerivation -> String
+  unicodeIncompleteDerivationInTheory thy showTypes (Hole tag assms concl) =
+    if null assms then
+      L.intercalate "\n" [
+        selected
+      , unwords ["\t⊢﹖", unicodeTermInTheory thy showTypes concl]
+      ]
+    else
+      L.intercalate "\n" [
+        "Assuming:"
+      , (L.intercalate "\n" . map (unicodeTermInTheory thy showTypes) $ assms)
+      , selected
+      , unwords ["\t⊢﹖", unicodeTermInTheory thy showTypes concl]
+      ]
+    where
+      selected :: String
+      selected =
+        case tag of
+          Selected -> "selected subgoal."
+          _        -> "subgoal not selected."
+  unicodeIncompleteDerivationInTheory thy showTypes (Branch _ children) =
+    L.intercalate "\n\n" . map (unicodeIncompleteDerivationInTheory thy showTypes) $ children
+
+  getUnicodeSelectedGoalsInTheory :: Theory -> ShowTypes -> ProofState -> [(Int, String)]
+  getUnicodeSelectedGoalsInTheory thy showTypes state = State.evalState (go $ get derivation state) 0
+    where
+      go :: IncompleteDerivation -> State.State Int [(Int, String)]
+      go t@Hole{} = do
+        index <- State.get
+        State.modify (+ 1)
+        return . return $ (index, unicodeIncompleteDerivationInTheory thy showTypes t)
+      go (Branch _ children) = do
+        mChildren <- State.mapM go children
+        return . concat $ mChildren
+
+  unicodeProofStateInTheory :: Inference Theory -> ShowTypes -> Inference ProofState -> Inference String
+  unicodeProofStateInTheory thy showTypes state = do
+    thy   <- thy
+    state <- state
+    return $ L.intercalate "\n" [
+      unwords ["Attempting to prove conjecture `", get conjectureName state, "'."]
+      , unwords ["Goals:", show $ countOpen state, "open with", show $ countSelected state, "selected."]
+      , prettySelected . getUnicodeSelectedGoalsInTheory thy showTypes $ state
+      ]
