@@ -48,24 +48,12 @@ cabal-version:       >=1.8
 
 library
   -- Modules exported by the library.
-  exposed-modules:     Mosquito.Kernel.Term
-                       Mosquito.Kernel.QualifiedName
-                       Mosquito.DerivedRules
-                       Mosquito.Theories.Theory
-                       Mosquito.Theories.Boolean
-                       Mosquito.Theories.Function
-                       Mosquito.Theories.Pair
-                       Mosquito.Theories.Relation
-                       Mosquito.Theories.Set
-                       Mosquito.Theories.Utility
-                       Mosquito.ProofState.Automation
-                       Mosquito.ProofState.Conversionals
-                       Mosquito.ProofState.PreTactics
-                       Mosquito.ProofState.ProofState
-                       Mosquito.ProofState.Tactics
-                       Mosquito.Utility.Extlib
-                       Mosquito.Utility.Pretty
-                       Mosquito.TermUtilities
+  exposed-modules:     Mosquito.Main
+                       Mosquito.Kernel.Kernel
+                       Mosquito.Kernel.Substitution
+                       Mosquito.Kernel.QName
+                       Mosquito.Kernel.Dependent.Nat
+                       Mosquito.Kernel.Dependent.Vector
   
   -- Modules included in this library but not exported.
   -- other-modules:       
@@ -74,5 +62,5 @@ library
   build-depends:       base, containers, fclabels, mtl, parsec
   
   -- Directories containing source files.
-  hs-source-dirs:      src
+  hs-source-dirs:      src2
   
